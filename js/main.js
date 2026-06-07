@@ -531,14 +531,43 @@ async function WeightScreen(root) {
     <div class="card">
       <h2>${t("weight_title")}</h2>
       <p class="muted" style="margin-top:-4px">${t("weight_tip")}</p>
-      <div style="background:#fff7e6;border:1px solid #ffe1a8;color:#8a5a00;padding:10px 12px;border-radius:10px;font-size:13px;margin-bottom:14px">
-        ${t("ocr_notice")}
-      </div>
+      <button class="btn" id="ocrBtn">${t("ocr_button")}</button>
+      <input type="file" id="ocrFile" accept="image/*" hidden />
+      <div class="muted" id="ocrStatus" style="font-size:13px;margin:8px 2px 16px">${t("ocr_hint")}</div>
       ${WEIGHT_FIELDS.map((f) => `
         <label class="field"><span class="lbl">${t("wf_" + f.key)}${f.unit ? `（${f.unit}）` : ""}</span>
         <input type="number" inputmode="decimal" data-k="${f.key}" placeholder="${t("weight_ph")}" /></label>`).join("")}
       <button class="btn" id="save">${t("save")}</button>
     </div>`;
+
+  // —— 截图自动识别 ——
+  const fileInput = $("#ocrFile", root);
+  const statusEl = $("#ocrStatus", root);
+  $("#ocrBtn", root).onclick = () => fileInput.click();
+  fileInput.onchange = async () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    statusEl.textContent = t("ocr_recognizing", { p: 0 });
+    try {
+      const { extractNumbersFromImage } = await import("./ocr.js");
+      const nums = await extractNumbersFromImage(file, (p) =>
+        (statusEl.textContent = t("ocr_recognizing", { p: Math.round(p * 100) }))
+      );
+      // 按固定顺序把识别到的数值填入对应字段
+      WEIGHT_FIELDS.forEach((f, i) => {
+        if (nums[i] != null) {
+          const inp = root.querySelector(`input[data-k="${f.key}"]`);
+          if (inp) inp.value = nums[i];
+        }
+      });
+      statusEl.textContent = t("ocr_done");
+      toast(t("ocr_done"));
+    } catch (e) {
+      statusEl.textContent = t("ocr_failed");
+      toast(t("ocr_failed"));
+    }
+    fileInput.value = "";
+  };
 
   $("#save", root).onclick = async () => {
     root.querySelectorAll("input[data-k]").forEach((inp) => { entry[inp.dataset.k] = inp.value.trim(); });
