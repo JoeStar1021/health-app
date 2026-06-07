@@ -26,7 +26,16 @@ export const authState = { user: null, status: "loggedout" };
 export function setStatusListener(fn) { statusListener = fn; }
 function setStatus(s) { authState.status = s; if (statusListener) statusListener(authState); }
 
-export function getUserEmail() { return currentUser?.email || ""; }
+// 用户名 → 内部合法邮箱（Supabase 用邮箱登录，我们对外只露用户名）
+function synthEmail(username) {
+  const norm = username.trim().toLowerCase();
+  const bytes = new TextEncoder().encode(norm);
+  let hex = ""; bytes.forEach((b) => (hex += b.toString(16).padStart(2, "0")));
+  return "u" + hex + "@joefit.app";
+}
+export function getUsername() { return currentUser?.user_metadata?.username || ""; }
+export function isAdmin() { return getUsername().trim().toLowerCase() === "joe"; }
+export function cachedRole() { return localStorage.getItem(LOCAL_PREFIX + "role"); }
 
 // 本地是否已有登录会话（supabase-js 会把会话存在 localStorage）
 export function hasStoredSession() {
@@ -87,14 +96,17 @@ window.addEventListener("visibilitychange", () => { if (document.hidden) flushAl
 window.addEventListener("beforeunload", () => { flushAll(); });
 
 // —— 登录 / 注册 / 退出 ——
-export async function signUp(email, password) {
+export async function signUp(username, password) {
   const c = await getClient();
-  const { error } = await c.auth.signUp({ email, password });
+  const { error } = await c.auth.signUp({
+    email: synthEmail(username), password,
+    options: { data: { username: username.trim() } },
+  });
   if (error) throw error;
 }
-export async function signIn(email, password) {
+export async function signIn(username, password) {
   const c = await getClient();
-  const { data, error } = await c.auth.signInWithPassword({ email, password });
+  const { data, error } = await c.auth.signInWithPassword({ email: synthEmail(username), password });
   if (error) throw error;
   currentUser = data.user; authState.user = currentUser;
 }
@@ -102,7 +114,33 @@ export async function signOut() {
   try { const c = await getClient(); await c.auth.signOut(); } catch (e) {}
   // 清掉本地数据缓存，避免同一台设备换人登录时串数据
   COLLECTIONS.forEach((k) => localStorage.removeItem(LOCAL_PREFIX + k));
+  localStorage.removeItem(LOCAL_PREFIX + "role");
   currentUser = null; authState.user = null; setStatus("loggedout");
+}
+
+// 把「用户名 + 最近登录时间」写进 user_data 的 profile 行（供管理员查看）
+async function upsertProfile() {
+  const c = await getClient();
+  await c.from("user_data").upsert(
+    { user_id: currentUser.id, collection: "profile",
+      data: { username: getUsername(), last_login: new Date().toISOString() },
+      updated_at: new Date().toISOString() },
+    { onConflict: "user_id,collection" }
+  );
+}
+
+// 管理员（Joe）读取所有人的 profile + 力量训练记录
+export async function adminFetchOverview() {
+  const c = await getClient();
+  const { data, error } = await c.from("user_data")
+    .select("user_id,collection,data").in("collection", ["profile", "strength_sessions"]);
+  if (error) throw error;
+  const profiles = {}, sessions = {};
+  (data || []).forEach((r) => {
+    if (r.collection === "profile") profiles[r.user_id] = r.data || {};
+    else sessions[r.user_id] = r.data || [];
+  });
+  return { profiles, sessions };
 }
 
 // —— 登录后初始化：确认会话、拉取数据、切到云后端 ——
@@ -113,7 +151,10 @@ export async function initAfterLogin() {
   currentUser = session?.user || null;
   authState.user = currentUser;
   if (!currentUser) throw new Error("会话无效");
-  await pullAndMaybeMigrate();
+  try { await upsertProfile(); } catch (e) {}
+  localStorage.setItem(LOCAL_PREFIX + "role", isAdmin() ? "admin" : "user");
+  // 管理员不拉取/迁移自己的数据（避免把桌面上的旧 Drive 数据误迁进 Joe 账号）
+  if (!isAdmin()) await pullAndMaybeMigrate();
   setBackend(supaBackend);
   setStatus("synced");
 }

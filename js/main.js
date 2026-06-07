@@ -102,8 +102,8 @@ async function LoginScreen(root) {
     root.innerHTML = `
       <div class="card">
         <h2>${t("login_title")}</h2>
-        <label class="field"><span class="lbl">${t("email")}</span>
-          <input id="email" type="email" inputmode="email" autocomplete="email" placeholder="${t("email_ph")}" /></label>
+        <label class="field"><span class="lbl">${t("username")}</span>
+          <input id="username" type="text" autocomplete="username" placeholder="${t("username_ph")}" /></label>
         <label class="field"><span class="lbl">${t("password")}</span>
           <input id="password" type="password" autocomplete="current-password" placeholder="${t("password_ph")}" /></label>
         <button class="btn" id="submit">${mode === "login" ? t("login_btn") : t("signup_btn")}</button>
@@ -114,17 +114,17 @@ async function LoginScreen(root) {
     $("#toggle", root).onclick = () => { mode = mode === "login" ? "signup" : "login"; paint(); };
   }
   async function submit() {
-    const email = $("#email", root).value.trim();
+    const username = $("#username", root).value.trim();
     const pw = $("#password", root).value;
     const msg = $("#loginMsg", root);
-    if (!email || !pw) { msg.textContent = t("fill_email_pw"); return; }
+    if (!username || !pw) { msg.textContent = t("fill_email_pw"); return; }
     if (pw.length < 6) { msg.textContent = t("pw_too_short"); return; }
     const btn = $("#submit", root); btn.disabled = true; msg.textContent = "…";
     try {
-      if (mode === "signup") await Auth.signUp(email, pw);
-      await Auth.signIn(email, pw);
+      if (mode === "signup") await Auth.signUp(username, pw);
+      await Auth.signIn(username, pw);
       await Auth.initAfterLogin();
-      reset(HomeScreen, "title_home");
+      routeAfterLogin();
     } catch (e) {
       msg.style.color = "var(--red)";
       msg.textContent = (mode === "signup" ? t("signup_failed") : t("login_failed")) + (e?.message ? "：" + e.message : "");
@@ -134,22 +134,26 @@ async function LoginScreen(root) {
   paint();
 }
 
+// 登录成功后按角色分流（管理员 Joe → 管理界面，其余 → 普通首页）
+function routeAfterLogin() {
+  if (Auth.isAdmin()) reset(AdminScreen, "title_admin");
+  else reset(HomeScreen, "title_home");
+}
+
 // —— 首页底部的账户区 ——
+// 正常同步时不显示任何同步字样（不让朋友意识到数据在上云），只显示用户名；
+// 同步出故障时才显示「有故障，请与 Joe 联系」。
 function syncStatusText() {
-  switch (Auth.authState.status) {
-    case "syncing": return t("sync_syncing");
-    case "error": return t("sync_error");
-    default: return t("sync_synced");
-  }
+  return Auth.authState.status === "error" ? t("sync_error_user") : "";
 }
 function accountGroupHtml() {
-  const errColor = Auth.authState.status === "error" ? "color:var(--red)" : "";
+  const txt = syncStatusText();
   return `
     <div class="group">
       <div class="row" style="cursor:default">
         ${iconTile("user", "var(--brand)")}
-        <span class="row-text"><span class="row-title">${esc(Auth.getUserEmail())}</span>
-          <span class="row-sub" id="syncSub" style="${errColor}">${syncStatusText()}</span></span>
+        <span class="row-text"><span class="row-title">${esc(Auth.getUsername())}</span>
+          <span class="row-sub" id="syncSub" style="color:var(--red)">${txt}</span></span>
       </div>
       <button class="row" id="logout">
         ${iconTile("logout", "#8e8e93")}
@@ -161,6 +165,52 @@ function accountGroupHtml() {
 function wireAccountGroup(root) {
   const btn = $("#logout", root);
   if (btn) btn.onclick = async () => {
+    if (!confirm(t("logout_confirm"))) return;
+    await Auth.signOut();
+    reset(LoginScreen, "title_login");
+  };
+}
+
+// —— 管理员界面（仅 Joe 登录进入；与普通用户界面完全隔离）——
+async function AdminScreen(root) {
+  renderLangSwitch();
+  root.innerHTML = `<div class="empty">${t("loading")}</div>`;
+  let ov;
+  try { ov = await Auth.adminFetchOverview(); }
+  catch (e) { root.innerHTML = `<div class="empty">${t("admin_load_error")}</div>`; return; }
+
+  const today = todayStr();
+  const users = Object.entries(ov.profiles).map(([uid, p]) => ({
+    uid, username: p.username || "(?)", last_login: p.last_login || "",
+  }));
+  const todays = users
+    .filter((u) => u.last_login.slice(0, 10) === today)
+    .sort((a, b) => b.last_login.localeCompare(a.last_login));
+
+  const hhmm = (iso) => { const d = new Date(iso); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+  const cardFor = (u) => {
+    const sess = (ov.sessions[u.uid] || []).filter((s) => (s.timestamp || "").slice(0, 10) === today && s.status === "done");
+    let trained;
+    if (sess.length === 0) trained = `<div class="meta">${t("admin_no_training")}</div>`;
+    else trained = sess.map((s) => {
+      const done = s.exercises.filter((e) => e.status === "completed");
+      const names = done.map((e) => esc(e.exercise_name)).join("、");
+      return `<div class="meta"><b>${esc(s.workout_day_template)}</b> · ${t("completed_n_of_m", { done: done.length, total: s.exercises.length })}${names ? "：" + names : ""}</div>`;
+    }).join("");
+    return `<div class="card">
+      <div class="name" style="font-size:17px;font-weight:600">${esc(u.username)} <span class="tag">${t("admin_login_at", { time: hhmm(u.last_login) })}</span></div>
+      <div style="margin-top:6px">${trained}</div>
+    </div>`;
+  };
+
+  root.innerHTML = `
+    <div class="section-title">${t("admin_title")} · ${t("admin_today_count", { n: todays.length })}（${t("admin_all_users", { n: users.length })}）</div>
+    ${todays.length ? todays.map(cardFor).join("") : `<div class="empty">${t("admin_no_login")}</div>`}
+    <div class="btn-row"><button class="btn secondary" id="refresh">${t("admin_refresh")}</button></div>
+    <button class="btn danger small" id="alogout" style="width:100%;margin-top:12px">${t("logout")}</button>
+  `;
+  $("#refresh", root).onclick = () => render();
+  $("#alogout", root).onclick = async () => {
     if (!confirm(t("logout_confirm"))) return;
     await Auth.signOut();
     reset(LoginScreen, "title_login");
@@ -705,10 +755,16 @@ Auth.setStatusListener(() => {
 
 (async () => {
   if (Auth.hasStoredSession()) {
-    // 已登录：先用本地缓存秒开（离线也能用），再后台连云、拉取、切到云后端
-    Auth.useLocalFallback();
-    reset(HomeScreen, "title_home");
-    Auth.initAfterLogin().then(() => render()).catch(() => {});
+    appEl.innerHTML = `<div class="empty">${t("loading")}</div>`;
+    try {
+      await Auth.initAfterLogin();
+      routeAfterLogin(); // 按角色分流：管理员 → 管理界面，普通用户 → 首页
+    } catch (e) {
+      // 离线/连不上云：普通用户用本地缓存进首页；管理员需联网（进管理界面会提示加载失败）
+      Auth.useLocalFallback();
+      if (Auth.cachedRole() === "admin") reset(AdminScreen, "title_admin");
+      else reset(HomeScreen, "title_home");
+    }
   } else {
     reset(LoginScreen, "title_login");
   }
