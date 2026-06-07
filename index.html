@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>健康记录</title>
+
+  <!-- PWA：可“添加到主屏幕”，iPhone 上接近原生体验 -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#2f6df6" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="健康记录" />
+  <link rel="apple-touch-icon" href="icons/icon-180.png" />
+
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <!-- 顶部应用栏 -->
+  <header id="appbar">
+    <button id="backBtn" class="iconbtn" aria-label="返回" hidden>‹</button>
+    <h1 id="title">健康记录</h1>
+    <span id="appbarRight"></span>
+  </header>
+
+  <!-- 主内容区，所有界面都渲染到这里 -->
+  <main id="app"></main>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
