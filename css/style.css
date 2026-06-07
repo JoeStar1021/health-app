@@ -197,3 +197,21 @@ input:disabled { background: #f0f0f3; color: #c4c4c8; }
   font-size: 15px; z-index: 100; opacity: 0; transition: opacity .2s; pointer-events: none;
 }
 .toast.show { opacity: 1; }
+
+/* —— 页脚版权声明（柔和灰，非纯黑）—— */
+#credit {
+  text-align: center;
+  color: #b3b3b8;
+  font-size: 12px;
+  line-height: 1.7;
+  letter-spacing: .2px;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 30px 16px calc(env(safe-area-inset-bottom) + 40px);
+}
+#credit .sig {
+  display: block;
+  height: 40px; width: auto;     /* 等比缩放 */
+  margin: 8px auto;
+  opacity: .8;
+}
