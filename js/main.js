@@ -8,7 +8,7 @@ import {
   WEIGHT_FIELDS, newWeightEntry, newDietEntry, SET_TYPES,
 } from "./models.js";
 import { t, getLang, setLang, localeTag } from "./i18n.js";
-import { connectDrive, disconnectDrive, maybeRestoreDrive, driveState, setStatusListener } from "./drive.js";
+import * as Auth from "./supabase.js";
 
 // ---------- 小工具 ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -36,7 +36,20 @@ const ICONS = {
   chevR: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>`,
   check: `<svg viewBox="0 0 24 24" fill="none" stroke="#34c759" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`,
   circle: `<svg viewBox="0 0 24 24" fill="none" stroke="#c4c4c8" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>`,
+  user: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>`,
+  logout: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 17l5-5-5-5M20 12H9M9 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h3"/></svg>`,
 };
+
+// 顶栏右侧的语言切换（首页和登录页共用）
+function renderLangSwitch() {
+  rightEl.innerHTML = `<span class="lang-switch">
+    <button data-l="ja" class="${getLang() === "ja" ? "on" : ""}">${t("lang_ja")}</button>
+    <button data-l="zh" class="${getLang() === "zh" ? "on" : ""}">${t("lang_zh")}</button>
+  </span>`;
+  rightEl.querySelectorAll("button").forEach((b) => {
+    b.onclick = () => { setLang(b.dataset.l); render(); };
+  });
+}
 function iconTile(name, color) {
   return `<span class="icontile" style="background:${color}">${ICONS[name]}</span>`;
 }
@@ -81,46 +94,76 @@ backBtn.addEventListener("click", back);
 // 组类型显示名（内部值 normal/warmup -> 当前语言）
 function setTypeLabel(v) { return t("set_type_" + v); }
 
-// —— 数据存储卡片（本地 / Google Drive 同步）——
-function driveStatusText() {
-  switch (driveState.status) {
-    case "connecting": return t("drive_connecting");
-    case "syncing": return t("drive_syncing");
-    case "synced": return t("drive_synced");
-    case "error": return t("drive_error");
-    default: return "";
+// —— 登录页 ——
+async function LoginScreen(root) {
+  renderLangSwitch();
+  let mode = "login"; // login | signup
+  function paint() {
+    root.innerHTML = `
+      <div class="card">
+        <h2>${t("login_title")}</h2>
+        <label class="field"><span class="lbl">${t("email")}</span>
+          <input id="email" type="email" inputmode="email" autocomplete="email" placeholder="${t("email_ph")}" /></label>
+        <label class="field"><span class="lbl">${t("password")}</span>
+          <input id="password" type="password" autocomplete="current-password" placeholder="${t("password_ph")}" /></label>
+        <button class="btn" id="submit">${mode === "login" ? t("login_btn") : t("signup_btn")}</button>
+        <button class="btn ghost" id="toggle" style="margin-top:10px">${mode === "login" ? t("login_or_signup") : t("have_account")}</button>
+        <div class="muted" id="loginMsg" style="font-size:13px;margin-top:12px;min-height:18px"></div>
+      </div>`;
+    $("#submit", root).onclick = submit;
+    $("#toggle", root).onclick = () => { mode = mode === "login" ? "signup" : "login"; paint(); };
   }
-}
-function storageCardHtml() {
-  if (driveState.connected) {
-    return `
-      <div class="statusline">☁️ ${t("storage_drive_status")}</div>
-      <div class="statusline">${driveStatusText()}</div>
-      <button class="btn ghost small" id="driveDisconnect" style="margin-top:10px">${t("disconnect_drive")}</button>`;
-  }
-  return `
-    <div class="statusline">📱 ${t("storage_local_status")}</div>
-    <p class="muted" style="font-size:13px">${t("drive_local_hint")}</p>
-    <button class="btn" id="driveConnect">${t("connect_drive")}</button>
-    ${driveState.status === "error" ? `<div class="statusline" style="color:var(--red)">${t("drive_error")}</div>` : ""}`;
-}
-function wireStorageCard(root) {
-  const connectBtn = $("#driveConnect", root);
-  if (connectBtn) connectBtn.onclick = async () => {
-    connectBtn.disabled = true;
+  async function submit() {
+    const email = $("#email", root).value.trim();
+    const pw = $("#password", root).value;
+    const msg = $("#loginMsg", root);
+    if (!email || !pw) { msg.textContent = t("fill_email_pw"); return; }
+    if (pw.length < 6) { msg.textContent = t("pw_too_short"); return; }
+    const btn = $("#submit", root); btn.disabled = true; msg.textContent = "…";
     try {
-      await connectDrive(true);
-      toast(t("drive_synced"));
+      if (mode === "signup") await Auth.signUp(email, pw);
+      await Auth.signIn(email, pw);
+      await Auth.initAfterLogin();
+      reset(HomeScreen, "title_home");
     } catch (e) {
-      toast(t("drive_connect_failed"));
+      msg.style.color = "var(--red)";
+      msg.textContent = (mode === "signup" ? t("signup_failed") : t("login_failed")) + (e?.message ? "：" + e.message : "");
+      btn.disabled = false;
     }
-    render(); // 刷新首页，反映连接状态
-  };
-  const disconnectBtn = $("#driveDisconnect", root);
-  if (disconnectBtn) disconnectBtn.onclick = () => {
-    if (!confirm(t("drive_disconnect_confirm"))) return;
-    disconnectDrive();
-    render();
+  }
+  paint();
+}
+
+// —— 首页底部的账户区 ——
+function syncStatusText() {
+  switch (Auth.authState.status) {
+    case "syncing": return t("sync_syncing");
+    case "error": return t("sync_error");
+    default: return t("sync_synced");
+  }
+}
+function accountGroupHtml() {
+  const errColor = Auth.authState.status === "error" ? "color:var(--red)" : "";
+  return `
+    <div class="group">
+      <div class="row" style="cursor:default">
+        ${iconTile("user", "var(--brand)")}
+        <span class="row-text"><span class="row-title">${esc(Auth.getUserEmail())}</span>
+          <span class="row-sub" id="syncSub" style="${errColor}">${syncStatusText()}</span></span>
+      </div>
+      <button class="row" id="logout">
+        ${iconTile("logout", "#8e8e93")}
+        <span class="row-text"><span class="row-title">${t("logout")}</span></span>
+        <span class="row-chev">${ICONS.chevR}</span>
+      </button>
+    </div>`;
+}
+function wireAccountGroup(root) {
+  const btn = $("#logout", root);
+  if (btn) btn.onclick = async () => {
+    if (!confirm(t("logout_confirm"))) return;
+    await Auth.signOut();
+    reset(LoginScreen, "title_login");
   };
 }
 
@@ -168,25 +211,18 @@ async function HomeScreen(root) {
       ${row("toHistory", "chart", "var(--purple)", t("home_history"), t("home_history_sub"))}
     </div>
 
-    <div class="section-title">${t("storage_section")}</div>
-    <div class="card" id="storageCard">${storageCardHtml()}</div>
+    <div class="section-title">${t("account_section")}</div>
+    ${accountGroupHtml()}
   `;
 
-  // 语言切换：放在右上角的小控件（设置一次会被记住，无需每次重选）
-  rightEl.innerHTML = `<span class="lang-switch">
-    <button data-l="ja" class="${getLang() === "ja" ? "on" : ""}">${t("lang_ja")}</button>
-    <button data-l="zh" class="${getLang() === "zh" ? "on" : ""}">${t("lang_zh")}</button>
-  </span>`;
-  rightEl.querySelectorAll("button").forEach((b) => {
-    b.onclick = () => { setLang(b.dataset.l); render(); };
-  });
+  renderLangSwitch();
 
   $("#toStrength", root).onclick = () => navigate(StrengthPickScreen, "title_pick");
   $("#toWeight", root).onclick = () => navigate(WeightScreen, "title_weight");
   $("#toDiet", root).onclick = () => navigate(DietScreen, "title_diet");
   $("#toHistory", root).onclick = () => navigate(HistoryScreen, "title_history");
   if (inProgress) $("#resume", root).onclick = () => openSession(inProgress.id);
-  wireStorageCard(root);
+  wireAccountGroup(root);
 }
 
 // ============================================================
@@ -658,16 +694,24 @@ async function HistoryScreen(root) {
 // 启动
 // ============================================================
 
-// Drive 同步状态变化时，若当前在首页就实时更新「数据存储」卡片
-setStatusListener(() => {
-  const card = document.getElementById("storageCard");
-  if (card) { card.innerHTML = storageCardHtml(); wireStorageCard(card.parentElement || document); }
+// 同步状态变化时，实时更新首页账户区里的同步提示
+Auth.setStatusListener(() => {
+  const sub = document.getElementById("syncSub");
+  if (sub) {
+    sub.textContent = syncStatusText();
+    sub.style.color = Auth.authState.status === "error" ? "var(--red)" : "";
+  }
 });
 
 (async () => {
-  // 若之前连过 Google Drive，启动时静默恢复并拉取最新数据
-  await maybeRestoreDrive();
-  reset(HomeScreen, "title_home");
+  if (Auth.hasStoredSession()) {
+    // 已登录：先用本地缓存秒开（离线也能用），再后台连云、拉取、切到云后端
+    Auth.useLocalFallback();
+    reset(HomeScreen, "title_home");
+    Auth.initAfterLogin().then(() => render()).catch(() => {});
+  } else {
+    reset(LoginScreen, "title_login");
+  }
 })();
 
 // 注册 Service Worker（让 App 可离线、可加到主屏幕）

@@ -172,6 +172,23 @@ const dict = {
     drive_connect_failed: "接続に失敗しました。もう一度お試しください。",
     drive_disconnect_confirm: "Google ドライブとの同期を解除しますか？（アップロード済みのデータは削除されません）",
 
+    // 登录 / 账户
+    title_login: "ログイン",
+    login_title: "ログイン / 新規登録",
+    email: "メールアドレス", email_ph: "you@example.com",
+    password: "パスワード", password_ph: "6文字以上",
+    login_btn: "ログイン", signup_btn: "新規登録",
+    login_or_signup: "アカウントがない方はこちらで新規登録",
+    have_account: "すでにアカウントをお持ちの方はログイン",
+    fill_email_pw: "メールとパスワードを入力してください",
+    pw_too_short: "パスワードは6文字以上にしてください",
+    login_failed: "ログインに失敗しました",
+    signup_failed: "新規登録に失敗しました",
+    account_section: "アカウント",
+    logout: "ログアウト",
+    logout_confirm: "ログアウトしますか？",
+    sync_synced: "クラウドと同期済み", sync_syncing: "同期中…", sync_error: "同期エラー（ネット接続を確認）",
+
     // 通用
     save: "保存",
   },
@@ -310,6 +327,23 @@ const dict = {
     drive_error: "同步出错，请重新连接一次。",
     drive_connect_failed: "连接失败，请再试一次。",
     drive_disconnect_confirm: "断开与 Google 云端硬盘的同步？（已上传的数据不会被删除）",
+
+    // 登录 / 账户
+    title_login: "登录",
+    login_title: "登录 / 注册",
+    email: "邮箱", email_ph: "you@example.com",
+    password: "密码", password_ph: "至少 6 位",
+    login_btn: "登录", signup_btn: "注册",
+    login_or_signup: "还没有账号？点这里注册",
+    have_account: "已有账号？去登录",
+    fill_email_pw: "请填写邮箱和密码",
+    pw_too_short: "密码至少 6 位",
+    login_failed: "登录失败",
+    signup_failed: "注册失败",
+    account_section: "账户",
+    logout: "退出登录",
+    logout_confirm: "确定退出登录？",
+    sync_synced: "已与云端同步", sync_syncing: "同步中…", sync_error: "同步出错（请检查网络）",
 
     save: "保存",
   },
