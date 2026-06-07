@@ -27,6 +27,20 @@ function fmtDate(iso) {
 }
 function todayStr() { return new Date().toISOString().slice(0, 10); }
 
+// —— SVG 图标（iOS 线条风）——
+const ICONS = {
+  dumbbell: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 8v8M3.5 10v4M17.5 8v8M20.5 10v4M6.5 12h11"/></svg>`,
+  scale: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15a8 8 0 0 1 16 0"/><path d="M12 15l3.5-3.6"/></svg>`,
+  meal: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3v6a3 3 0 0 0 3 3M10 3v18M16 3c-1.3 1.6-2 3.9-2 6 0 1.7.8 2.8 2 3.2V21"/></svg>`,
+  chart: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20V11M12 20V4M19 20v-6"/></svg>`,
+  chevR: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>`,
+  check: `<svg viewBox="0 0 24 24" fill="none" stroke="#34c759" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`,
+  circle: `<svg viewBox="0 0 24 24" fill="none" stroke="#c4c4c8" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>`,
+};
+function iconTile(name, color) {
+  return `<span class="icontile" style="background:${color}">${ICONS[name]}</span>`;
+}
+
 let toastTimer;
 function toast(msg) {
   let el = $(".toast");
@@ -125,8 +139,12 @@ async function HomeScreen(root) {
   const weighedToday = weights.some((w) => w.timestamp.slice(0, 10) === today);
   const dietToday = diets.find((d) => d.date === today);
 
-  const status = (ok, txt) => `<div class="statusline">${ok ? "✅" : "⬜️"} ${txt}</div>`;
+  const status = (ok, txt) => `<div class="statusline"><span class="ic">${ok ? ICONS.check : ICONS.circle}</span>${txt}</div>`;
   const weekday = new Date().toLocaleDateString(localeTag(), { month: "long", day: "numeric", weekday: "long" });
+  const row = (id, icon, color, title, sub) => `
+    <button class="row" id="${id}">${iconTile(icon, color)}
+      <span class="row-text"><span class="row-title">${title}</span><span class="row-sub">${sub}</span></span>
+      <span class="row-chev">${ICONS.chevR}</span></button>`;
 
   root.innerHTML = `
     <div class="card">
@@ -136,24 +154,19 @@ async function HomeScreen(root) {
       ${status(!!dietToday, dietToday ? (dietToday.adhered ? t("today_diet_yes") : t("today_diet_no")) : t("today_diet_none"))}
     </div>
 
-    ${inProgress ? `
-    <button class="bigbtn" id="resume" style="border-color:var(--brand)">
-      <span class="emoji">🏋️</span>
-      <span class="grow"><b>${t("resume_title")}</b><span class="sub">${t("resume_sub", { name: esc(inProgress.workout_day_template) })}</span></span>
-      <span class="chev">›</span>
-    </button>` : ""}
+    ${inProgress ? `<div class="group">${row("resume", "dumbbell", "var(--brand)", t("resume_title"), t("resume_sub", { name: esc(inProgress.workout_day_template) }))}</div>` : ""}
 
     <div class="section-title">${t("section_record")}</div>
-    <button class="bigbtn" id="toStrength"><span class="emoji">🏋️</span>
-      <span class="grow">${t("home_strength")}<span class="sub">${t("home_strength_sub")}</span></span><span class="chev">›</span></button>
-    <button class="bigbtn" id="toWeight"><span class="emoji">⚖️</span>
-      <span class="grow">${t("home_weight")}<span class="sub">${t("home_weight_sub")}</span></span><span class="chev">›</span></button>
-    <button class="bigbtn" id="toDiet"><span class="emoji">🍽️</span>
-      <span class="grow">${t("home_diet")}<span class="sub">${t("home_diet_sub")}</span></span><span class="chev">›</span></button>
+    <div class="group">
+      ${row("toStrength", "dumbbell", "var(--amber)", t("home_strength"), t("home_strength_sub"))}
+      ${row("toWeight", "scale", "var(--brand)", t("home_weight"), t("home_weight_sub"))}
+      ${row("toDiet", "meal", "var(--green)", t("home_diet"), t("home_diet_sub"))}
+    </div>
 
     <div class="section-title">${t("section_history")}</div>
-    <button class="bigbtn" id="toHistory"><span class="emoji">📈</span>
-      <span class="grow">${t("home_history")}<span class="sub">${t("home_history_sub")}</span></span><span class="chev">›</span></button>
+    <div class="group">
+      ${row("toHistory", "chart", "var(--purple)", t("home_history"), t("home_history_sub"))}
+    </div>
 
     <div class="section-title">${t("storage_section")}</div>
     <div class="card" id="storageCard">${storageCardHtml()}</div>

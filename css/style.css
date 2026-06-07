@@ -1,19 +1,20 @@
 /* ============================================================
-   style.css —— 手机优先的界面样式
+   style.css —— iOS（苹果）风格 · 手机优先
+   设计语言：iOS 设置 App 的「分组卡片 + 彩色圆角图标」
    ============================================================ */
 
 :root {
-  --bg: #f2f3f7;
+  --bg: #f2f2f7;          /* iOS 分组背景灰 */
   --card: #ffffff;
-  --ink: #1c1f26;
-  --muted: #6b7280;
-  --line: #e5e7eb;
-  --brand: #2f6df6;
-  --brand-ink: #ffffff;
-  --green: #16a34a;
-  --amber: #d97706;
-  --red: #dc2626;
-  --radius: 14px;
+  --ink: #1c1c1e;         /* 主文字 */
+  --muted: #8e8e93;       /* 次要文字（iOS secondaryLabel）*/
+  --sep: #e4e4e9;         /* 分隔线 */
+  --brand: #007aff;       /* iOS 蓝 */
+  --green: #34c759;
+  --amber: #ff9500;
+  --red: #ff3b30;
+  --purple: #af52de;
+  --radius: 12px;
   --pad: 16px;
 }
 
@@ -23,162 +24,176 @@ html, body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-    "Microsoft YaHei", system-ui, sans-serif;
-  font-size: 16px;
-  line-height: 1.45;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
+    "Hiragino Sans", "Microsoft YaHei", system-ui, sans-serif;
+  font-size: 17px;            /* iOS 正文 */
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* —— 顶部栏 —— */
+/* —— 顶部导航栏（iOS 风：浅色、细线、蓝返回）—— */
 #appbar {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: max(env(safe-area-inset-top), 10px) var(--pad) 10px;
-  background: var(--brand);
-  color: var(--brand-ink);
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center;
+  padding: max(env(safe-area-inset-top), 12px) 8px 10px;
+  background: rgba(249,249,249,.92);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 0.5px solid var(--sep);
+  min-height: 44px;
 }
-#appbar h1 { font-size: 18px; margin: 0; flex: 1; font-weight: 600; }
+#appbar h1 {
+  font-size: 17px; font-weight: 600; margin: 0;
+  flex: 1; text-align: center; color: var(--ink);
+}
 .iconbtn {
-  background: transparent;
-  border: none;
-  color: var(--brand-ink);
-  font-size: 30px;
-  line-height: 1;
-  padding: 0 6px;
-  cursor: pointer;
+  background: transparent; border: none; color: var(--brand);
+  font-size: 30px; line-height: 1; padding: 0 6px; cursor: pointer;
+  min-width: 40px; text-align: left;
 }
-#appbarRight { min-width: 24px; text-align: right; }
-.lang-switch {
-  display: inline-flex; border: 1px solid rgba(255,255,255,.55);
-  border-radius: 999px; overflow: hidden;
-}
-.lang-switch button {
-  background: transparent; color: #fff; border: none;
-  font-size: 12px; padding: 5px 10px; cursor: pointer; line-height: 1;
-}
-.lang-switch button.on { background: #fff; color: var(--brand); font-weight: 600; }
+#appbarRight { min-width: 40px; display: flex; justify-content: flex-end; padding-right: 6px; }
 .appbar-action {
-  background: rgba(255,255,255,.18);
-  border: none; color: #fff; font-size: 14px;
-  padding: 6px 12px; border-radius: 999px; cursor: pointer;
+  background: transparent; border: none; color: var(--brand);
+  font-size: 16px; padding: 4px 6px; cursor: pointer;
 }
+.lang-switch { display: inline-flex; background: #e9e9ee; border-radius: 8px; padding: 2px; }
+.lang-switch button {
+  background: transparent; color: var(--ink); border: none;
+  font-size: 13px; padding: 4px 9px; cursor: pointer; line-height: 1; border-radius: 6px;
+}
+.lang-switch button.on { background: #fff; font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
 
 /* —— 内容区 —— */
 #app {
-  padding: var(--pad);
-  padding-bottom: calc(env(safe-area-inset-bottom) + 40px);
-  max-width: 560px;
-  margin: 0 auto;
+  padding: 14px var(--pad);
+  padding-bottom: calc(env(safe-area-inset-bottom) + 44px);
+  max-width: 560px; margin: 0 auto;
 }
 
-/* —— 卡片 —— */
+/* —— 分组标题（iOS 灰色小标题）—— */
+.section-title {
+  font-size: 13px; color: var(--muted); font-weight: 400;
+  margin: 22px 4px 7px; padding: 0;
+}
+
+/* —— 卡片 / 分组容器 —— */
 .card {
-  background: var(--card);
-  border-radius: var(--radius);
-  padding: var(--pad);
-  margin-bottom: 14px;
-  box-shadow: 0 1px 2px rgba(0,0,0,.04);
+  background: var(--card); border-radius: var(--radius);
+  padding: var(--pad); margin-bottom: 14px;
 }
-.card h2 { font-size: 16px; margin: 0 0 10px; }
-.section-title { font-size: 13px; color: var(--muted); margin: 18px 4px 8px; font-weight: 600; }
+.card h2 { font-size: 17px; margin: 0 0 10px; font-weight: 600; }
 
-/* —— 大入口按钮（首页）—— */
-.bigbtn {
-  display: flex; align-items: center; gap: 14px;
-  width: 100%; text-align: left;
-  background: var(--card); border: 1px solid var(--line);
-  border-radius: var(--radius); padding: 18px var(--pad);
-  margin-bottom: 12px; cursor: pointer; font-size: 17px; color: var(--ink);
+/* —— iOS 分组列表（首页用）—— */
+.group {
+  background: var(--card); border-radius: var(--radius);
+  overflow: hidden; margin-bottom: 14px;
 }
-.bigbtn .emoji { font-size: 26px; }
-.bigbtn .sub { display: block; font-size: 13px; color: var(--muted); margin-top: 2px; }
-.bigbtn .grow { flex: 1; }
-.bigbtn .chev { color: var(--muted); font-size: 22px; }
+.row {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 11px var(--pad); background: var(--card); border: none;
+  text-align: left; cursor: pointer; color: var(--ink); font-size: 17px;
+  position: relative;
+}
+.row:active { background: #f0f0f3; }
+.row + .row::before {
+  content: ""; position: absolute; top: 0; left: 58px; right: 0;
+  height: 0.5px; background: var(--sep);
+}
+.row .row-text { flex: 1; min-width: 0; }
+.row .row-title { display: block; }
+.row .row-sub { display: block; font-size: 13px; color: var(--muted); margin-top: 1px; }
+.row .row-chev { color: #c4c4c8; display: flex; flex: none; }
+.row .row-chev svg { width: 14px; height: 14px; }
 
-/* —— 通用按钮 —— */
+/* —— 彩色圆角图标块（iOS 设置 App 风）—— */
+.icontile {
+  width: 30px; height: 30px; border-radius: 7px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center; color: #fff;
+}
+.icontile svg { width: 19px; height: 19px; }
+
+/* —— 通用按钮（iOS 风）—— */
 button { font-family: inherit; }
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   background: var(--brand); color: #fff; border: none;
-  border-radius: 10px; padding: 12px 16px; font-size: 16px;
+  border-radius: 12px; padding: 13px 16px; font-size: 17px; font-weight: 500;
   cursor: pointer; width: 100%;
 }
-.btn.secondary { background: #eef1f6; color: var(--ink); }
-.btn.ghost { background: transparent; color: var(--brand); border: 1px solid var(--line); }
-.btn.danger { background: #fdeceb; color: var(--red); }
-.btn.small { width: auto; padding: 8px 12px; font-size: 14px; border-radius: 8px; }
-.btn:active { opacity: .85; }
+.btn.secondary { background: #e9e9ee; color: var(--ink); }
+.btn.ghost { background: transparent; color: var(--brand); border: 0.5px solid var(--brand); }
+.btn.danger { background: transparent; color: var(--red); }
+.btn.small { width: auto; padding: 9px 14px; font-size: 15px; }
+.btn:active { opacity: .8; }
 .btn-row { display: flex; gap: 10px; margin-top: 12px; }
 .btn-row .btn { flex: 1; }
 
 /* —— 表单 —— */
 label.field { display: block; margin-bottom: 12px; }
-label.field .lbl { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+label.field .lbl { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px; }
 input, select, textarea {
-  width: 100%; padding: 11px 12px; font-size: 16px;
-  border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink);
+  width: 100%; padding: 11px 12px; font-size: 17px;
+  border: 0.5px solid var(--sep); border-radius: 10px; background: #fff; color: var(--ink);
 }
-textarea { min-height: 70px; resize: vertical; }
-input:disabled { background: #f0f1f4; color: #b8bcc4; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--brand); }
+textarea { min-height: 72px; resize: vertical; }
+input:disabled { background: #f0f0f3; color: #c4c4c8; }
 .inline { display: flex; gap: 10px; }
 .inline > * { flex: 1; }
 
 /* —— 动作清单 / 列表项 —— */
 .listitem {
   display: flex; align-items: center; gap: 12px;
-  background: var(--card); border: 1px solid var(--line);
-  border-radius: 12px; padding: 14px var(--pad); margin-bottom: 10px; cursor: pointer;
+  background: var(--card); border-radius: 12px;
+  padding: 13px var(--pad); margin-bottom: 1px; cursor: pointer;
 }
+.listitem + .listitem { margin-top: 8px; }
+.listitem:active { background: #f0f0f3; }
 .listitem .grow { flex: 1; }
-.listitem .name { font-size: 16px; }
+.listitem .name { font-size: 17px; }
 .listitem .meta { font-size: 13px; color: var(--muted); margin-top: 2px; }
-.badge {
-  font-size: 12px; padding: 3px 9px; border-radius: 999px; white-space: nowrap;
-}
-.badge.done { background: #e7f6ec; color: var(--green); }
-.badge.skipped { background: #fdecec; color: var(--red); }
-.badge.todo { background: #eef1f6; color: var(--muted); }
+.badge { font-size: 13px; padding: 3px 10px; border-radius: 999px; white-space: nowrap; font-weight: 500; }
+.badge.done { background: #e7f9ee; color: var(--green); }
+.badge.skipped { background: #ffeceb; color: var(--red); }
+.badge.todo { background: #ececef; color: var(--muted); }
 
 /* —— 组（set）行 —— */
 .setrow {
-  display: grid;
-  grid-template-columns: 24px 1fr 1fr 1fr auto;
+  display: grid; grid-template-columns: 24px 1fr 1fr 1fr auto;
   gap: 8px; align-items: center; margin-bottom: 8px;
 }
-.setrow .idx { color: var(--muted); font-size: 14px; text-align: center; }
-.setrow input, .setrow select { padding: 9px 8px; font-size: 15px; }
-.setrow .del { background: none; border: none; color: var(--red); font-size: 20px; cursor: pointer; }
+.setrow .idx { color: var(--muted); font-size: 15px; text-align: center; }
+.setrow input, .setrow select { padding: 9px 8px; font-size: 16px; }
+.setrow .del { background: none; border: none; color: var(--red); font-size: 15px; cursor: pointer; padding: 0; }
 .set-head { display: grid; grid-template-columns: 24px 1fr 1fr 1fr auto; gap: 8px;
   font-size: 12px; color: var(--muted); margin-bottom: 6px; padding: 0 2px; }
 
 /* —— 上次记录提示条 —— */
 .lasttime {
-  background: #eef3ff; border: 1px solid #d6e2ff; color: #2748a6;
-  border-radius: 10px; padding: 10px 12px; font-size: 14px; margin-bottom: 14px;
+  background: #eaf3ff; color: #0a60d0;
+  border-radius: 10px; padding: 10px 12px; font-size: 15px; margin-bottom: 14px;
 }
 .lasttime b { font-weight: 600; }
 
 /* —— 杂项 —— */
 .muted { color: var(--muted); }
 .center { text-align: center; }
-.empty { text-align: center; color: var(--muted); padding: 30px 10px; }
+.empty { text-align: center; color: var(--muted); padding: 36px 10px; }
 .pill-toggle { display: flex; gap: 10px; }
 .pill-toggle button {
-  flex: 1; padding: 14px; border-radius: 12px; border: 1px solid var(--line);
-  background: #fff; font-size: 16px; cursor: pointer; color: var(--ink);
+  flex: 1; padding: 14px; border-radius: 12px; border: 0.5px solid var(--sep);
+  background: #fff; font-size: 17px; cursor: pointer; color: var(--ink);
 }
-.pill-toggle button.on-yes { background: #e7f6ec; border-color: var(--green); color: var(--green); font-weight: 600; }
-.pill-toggle button.on-no  { background: #fdecec; border-color: var(--red); color: var(--red); font-weight: 600; }
-.statusline { font-size: 14px; color: var(--muted); margin-top: 6px; }
-.divider { height: 1px; background: var(--line); margin: 14px 0; }
-.tag { display:inline-block; font-size:12px; color:var(--muted); background:#eef1f6; padding:2px 8px; border-radius:999px; margin-left:6px;}
+.pill-toggle button.on-yes { background: #e7f9ee; border-color: var(--green); color: var(--green); font-weight: 600; }
+.pill-toggle button.on-no  { background: #ffeceb; border-color: var(--red); color: var(--red); font-weight: 600; }
+.statusline { font-size: 15px; color: var(--ink); margin-top: 6px; display: flex; align-items: center; gap: 8px; }
+.statusline .ic { display: flex; }
+.statusline .ic svg { width: 18px; height: 18px; }
+.divider { height: 0.5px; background: var(--sep); margin: 14px 0; }
+.tag { display:inline-block; font-size:12px; color:var(--muted); background:#ececef; padding:2px 8px; border-radius:999px; margin-left:6px;}
 .toast {
-  position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%);
-  background: #1c1f26; color: #fff; padding: 10px 18px; border-radius: 999px;
-  font-size: 14px; z-index: 100; opacity: 0; transition: opacity .2s; pointer-events: none;
+  position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%);
+  background: rgba(40,40,42,.96); color: #fff; padding: 11px 18px; border-radius: 14px;
+  font-size: 15px; z-index: 100; opacity: 0; transition: opacity .2s; pointer-events: none;
 }
-.toast.show { opacity: .95; }
+.toast.show { opacity: 1; }
