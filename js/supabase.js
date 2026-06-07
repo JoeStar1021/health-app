@@ -129,6 +129,24 @@ async function upsertProfile() {
   );
 }
 
+// —— 管理员维护「允许注册的用户名」白名单 ——
+export async function adminListAllowed() {
+  const c = await getClient();
+  const { data, error } = await c.from("allowed_usernames").select("username,created_at").order("created_at");
+  if (error) throw error;
+  return (data || []).map((r) => r.username);
+}
+export async function adminAddAllowed(username) {
+  const c = await getClient();
+  const { error } = await c.from("allowed_usernames").insert({ username: username.trim() });
+  if (error) throw error;
+}
+export async function adminRemoveAllowed(username) {
+  const c = await getClient();
+  const { error } = await c.from("allowed_usernames").delete().eq("username", username);
+  if (error) throw error;
+}
+
 // 管理员（Joe）读取所有人的 profile + 力量训练记录
 export async function adminFetchOverview() {
   const c = await getClient();

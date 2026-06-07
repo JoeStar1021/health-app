@@ -178,6 +178,8 @@ async function AdminScreen(root) {
   let ov;
   try { ov = await Auth.adminFetchOverview(); }
   catch (e) { root.innerHTML = `<div class="empty">${t("admin_load_error")}</div>`; return; }
+  let allowed = [];
+  try { allowed = await Auth.adminListAllowed(); } catch (e) {}
 
   const today = todayStr();
   const users = Object.entries(ov.profiles).map(([uid, p]) => ({
@@ -203,12 +205,44 @@ async function AdminScreen(root) {
     </div>`;
   };
 
+  const allowedListHtml = (arr) => arr.length
+    ? arr.map((n) => `<div class="listitem" style="margin:0 0 8px"><div class="grow"><div class="name">${esc(n)}</div></div><button class="btn danger small" data-rm="${esc(n)}">✕</button></div>`).join("")
+    : `<div class="muted" style="font-size:13px">${t("invite_empty")}</div>`;
+
   root.innerHTML = `
     <div class="section-title">${t("admin_title")} · ${t("admin_today_count", { n: todays.length })}（${t("admin_all_users", { n: users.length })}）</div>
     ${todays.length ? todays.map(cardFor).join("") : `<div class="empty">${t("admin_no_login")}</div>`}
+
+    <div class="section-title">${t("invite_section")}</div>
+    <div class="card">
+      <p class="muted" style="font-size:13px;margin-top:0">${t("invite_hint")}</p>
+      <div class="inline" style="margin-bottom:12px">
+        <input id="inviteName" placeholder="${t("invite_ph")}" />
+        <button class="btn small" id="inviteBtn" style="flex:0 0 auto">${t("invite_btn")}</button>
+      </div>
+      <div id="allowedList">${allowedListHtml(allowed)}</div>
+    </div>
+
     <div class="btn-row"><button class="btn secondary" id="refresh">${t("admin_refresh")}</button></div>
     <button class="btn danger small" id="alogout" style="width:100%;margin-top:12px">${t("logout")}</button>
   `;
+
+  async function reloadAllowed() {
+    try { allowed = await Auth.adminListAllowed(); } catch (e) {}
+    $("#allowedList", root).innerHTML = allowedListHtml(allowed);
+  }
+  $("#inviteBtn", root).onclick = async () => {
+    const name = $("#inviteName", root).value.trim();
+    if (!name) return;
+    try { await Auth.adminAddAllowed(name); toast(t("invite_added", { name })); $("#inviteName", root).value = ""; await reloadAllowed(); }
+    catch (e) { toast(t("invite_fail")); }
+  };
+  $("#allowedList", root).addEventListener("click", async (e) => {
+    const n = e.target.dataset.rm;
+    if (n == null) return;
+    if (!confirm(t("invite_remove_confirm", { name: n }))) return;
+    try { await Auth.adminRemoveAllowed(n); await reloadAllowed(); } catch (err) {}
+  });
   $("#refresh", root).onclick = () => render();
   $("#alogout", root).onclick = async () => {
     if (!confirm(t("logout_confirm"))) return;
