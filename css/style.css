@@ -215,3 +215,37 @@ input:disabled { background: #f0f0f3; color: #c4c4c8; }
   margin: 8px auto;
   opacity: .8;
 }
+
+/* —— 训练手册 —— */
+/* 「选模板」界面顶部的手册入口图标用琥珀色 */
+.hb-entry .name { font-weight: 500; }
+
+/* 手册综述卡片 */
+.hb-card { padding: 14px var(--pad) 16px; }
+.hb-h { font-size: 16px; margin: 0 0 8px; }
+.hb-body { font-size: 15px; line-height: 1.6; color: var(--ink); }
+.hb-body b { font-weight: 600; }
+
+/* 动作详解 */
+.hb-title { font-size: 20px; margin: 0 0 2px; }
+.hb-sub { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+.hb-block { margin-bottom: 12px; }
+.hb-label {
+  font-size: 12px; color: var(--muted); font-weight: 600;
+  text-transform: none; margin-bottom: 4px;
+}
+.hb-text { font-size: 15px; line-height: 1.55; }
+.hb-list { margin: 4px 0 0; padding-left: 22px; }
+.hb-list li { font-size: 15px; line-height: 1.5; margin-bottom: 4px; }
+.hb-video { width: 100%; margin-top: 6px; text-decoration: none; }
+
+/* 动作记录界面：可点的动作名链接 */
+.hb-namelink {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-size: inherit; font-weight: inherit; color: var(--brand);
+  font-family: inherit;
+}
+.hb-namelink svg { width: 18px; height: 18px; }
+.hb-namelink:active { opacity: .6; }
+.hb-namehint { font-size: 12px; margin: -2px 0 8px; }

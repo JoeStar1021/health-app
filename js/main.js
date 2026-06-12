@@ -10,6 +10,7 @@ import {
 import { t, getLang, setLang, localeTag } from "./i18n.js";
 import * as Auth from "./supabase.js";
 import { maybeSeedHandbook } from "./seed.js";
+import { INTRO, GROUPS, getExerciseDetail } from "./handbook.js";
 
 // ---------- 小工具 ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -39,6 +40,7 @@ const ICONS = {
   circle: `<svg viewBox="0 0 24 24" fill="none" stroke="#c4c4c8" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>`,
   user: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>`,
   logout: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 17l5-5-5-5M20 12H9M9 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h3"/></svg>`,
+  book: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2zM19 17H6a2 2 0 0 0-2 2"/></svg>`,
 };
 
 // 顶栏右侧的语言切换（首页和登录页共用）
@@ -331,7 +333,12 @@ async function StrengthPickScreen(root) {
     return;
   }
 
-  root.innerHTML = `<div class="muted" style="margin:0 4px 12px">${t("pick_prompt")}</div>` +
+  root.innerHTML = `
+    <div class="listitem hb-entry" id="hbEntry">
+      ${iconTile("book", "#ff9500")}
+      <div class="grow"><div class="name">${t("handbook_entry")}</div></div><span class="chev muted">›</span>
+    </div>
+    <div class="muted" style="margin:0 4px 12px">${t("pick_prompt")}</div>` +
     templates.map((tpl) => `
       <div class="listitem" data-id="${tpl.id}">
         <div class="grow"><div class="name">${esc(tpl.name)}</div>
@@ -339,9 +346,66 @@ async function StrengthPickScreen(root) {
         </div><span class="chev muted">›</span>
       </div>`).join("");
 
-  root.querySelectorAll(".listitem").forEach((el) => {
+  $("#hbEntry", root).onclick = () => navigate(HandbookScreen, "title_handbook");
+  root.querySelectorAll(".listitem[data-id]").forEach((el) => {
     el.onclick = () => startSession(el.dataset.id);
   });
+}
+
+// —— 手册总览：原理综述 + 全部动作详解入口 ——
+async function HandbookScreen(root) {
+  const introHtml = INTRO.map((s) => `
+    <div class="group hb-card">
+      <h3 class="hb-h">${s.title}</h3>
+      <div class="hb-body">${s.html}</div>
+    </div>`).join("");
+
+  const groupsHtml = GROUPS.map((g) => `
+    <div class="section-title">${esc(g.title)}</div>
+    ${g.keys.map((key) => {
+      const d = getExerciseDetail(key);
+      if (!d) return "";
+      return `<div class="listitem hb-ex" data-key="${esc(key)}">
+        <div class="grow"><div class="name">${esc(d.names.zh)}${d.star ? " ⭐" : ""}</div>
+          <div class="meta">${esc(d.names.ja)} · ${esc(d.names.en)}</div></div>
+        <span class="chev muted">›</span>
+      </div>`;
+    }).join("")}`).join("");
+
+  root.innerHTML = introHtml +
+    `<div class="section-title" style="margin-top:8px">${t("hb_exercises")}</div>` + groupsHtml;
+
+  root.querySelectorAll(".hb-ex").forEach((el) => {
+    el.onclick = () => navigate((r) => HandbookExerciseScreen(r, el.dataset.key), "title_handbook");
+  });
+}
+
+// —— 单个动作详解 ——
+async function HandbookExerciseScreen(root, key) {
+  const d = getExerciseDetail(key);
+  if (!d) { root.innerHTML = `<div class="empty">${esc(key)}</div>`; return; }
+
+  const block = (label, body) => body
+    ? `<div class="hb-block"><div class="hb-label">${label}</div><div class="hb-text">${body}</div></div>` : "";
+  const list = (label, arr) => (arr && arr.length)
+    ? `<div class="hb-block"><div class="hb-label">${label}</div><ol class="hb-list">${arr.map((x) => `<li>${esc(x)}</li>`).join("")}</ol></div>` : "";
+  const ul = (label, arr) => (arr && arr.length)
+    ? `<div class="hb-block"><div class="hb-label">${label}</div><ul class="hb-list">${arr.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>` : "";
+
+  root.innerHTML = `
+    <div class="group hb-card">
+      <h2 class="hb-title">${esc(d.names.zh)}${d.star ? " ⭐" : ""}</h2>
+      <div class="hb-sub">${esc(d.names.ja)} ・ ${esc(d.names.en)}</div>
+      ${block(t("hb_equipment"), esc(d.equipment))}
+      ${block(t("hb_target"), esc(d.target))}
+      ${list(t("hb_steps"), d.steps)}
+      ${block(t("hb_feel"), esc(d.feel))}
+      ${block(t("hb_breathing"), esc(d.breathing))}
+      ${ul(t("hb_mistakes"), d.mistakes)}
+      ${block(t("hb_progress"), esc(d.progress))}
+      ${block(t("hb_regress"), esc(d.regress))}
+      <a class="btn hb-video" href="${esc(d.video)}" target="_blank" rel="noopener noreferrer">${t("handbook_video")}</a>
+    </div>`;
 }
 
 // —— 从模板开新的一次训练，立即存档（防丢），再进入清单 ——
@@ -470,9 +534,15 @@ async function ExerciseRecordScreen(root, sessionId, exIndex) {
     }).join("");
   }
 
+  const detail = getExerciseDetail(ex.exercise_name);
+  const nameHtml = detail
+    ? `<button class="hb-namelink" id="hbName" title="${t("handbook_tap")}">${esc(ex.exercise_name)} ${ICONS.book}</button>`
+    : esc(ex.exercise_name);
+
   root.innerHTML = `
     <div class="card">
-      <h2>${esc(ex.exercise_name)} ${ex.target_muscle ? `<span class="tag">${esc(ex.target_muscle)}</span>` : ""}</h2>
+      <h2>${nameHtml} ${ex.target_muscle ? `<span class="tag">${esc(ex.target_muscle)}</span>` : ""}</h2>
+      ${detail ? `<div class="hb-namehint muted">${t("handbook_tap")}</div>` : ""}
       ${lastHtml}
       <div class="set-head"><div></div><div>${t("col_weight")}</div><div>${t("col_reps")}</div><div>${t("col_rir")}</div><div>${t("col_type")}</div></div>
       <div id="sets">${setRowsHtml()}</div>
@@ -523,6 +593,8 @@ async function ExerciseRecordScreen(root, sessionId, exIndex) {
   $("#note", root).addEventListener("input", async (e) => {
     ex.note = e.target.value; await saveSession(session);
   });
+  if (detail) $("#hbName", root).onclick = () =>
+    navigate((r) => HandbookExerciseScreen(r, ex.exercise_name), "title_handbook");
   $("#done", root).onclick = async () => {
     ex.status = "completed"; await saveSession(session); toast(t("recorded")); back();
   };
