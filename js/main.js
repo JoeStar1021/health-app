@@ -9,6 +9,7 @@ import {
 } from "./models.js";
 import { t, getLang, setLang, localeTag } from "./i18n.js";
 import * as Auth from "./supabase.js";
+import { maybeSeedHandbook } from "./seed.js";
 
 // ---------- 小工具 ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -124,6 +125,7 @@ async function LoginScreen(root) {
       if (mode === "signup") await Auth.signUp(username, pw);
       await Auth.signIn(username, pw);
       await Auth.initAfterLogin();
+      await maybeSeedHandbook(); // 仅聶星辰账号会导入手册模板，其余账号无操作
       routeAfterLogin();
     } catch (e) {
       msg.style.color = "var(--red)";
@@ -792,6 +794,7 @@ Auth.setStatusListener(() => {
     appEl.innerHTML = `<div class="empty">${t("loading")}</div>`;
     try {
       await Auth.initAfterLogin();
+      await maybeSeedHandbook(); // 仅聶星辰账号会导入手册模板，其余账号无操作
       routeAfterLogin(); // 按角色分流：管理员 → 管理界面，普通用户 → 首页
     } catch (e) {
       // 离线/连不上云：普通用户用本地缓存进首页；管理员需联网（进管理界面会提示加载失败）
