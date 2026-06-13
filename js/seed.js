@@ -20,6 +20,8 @@ import { getUsername } from "./supabase.js";
 const OWNER = "聶星辰";
 // 一次性标记（换版本号即可重新导入）
 const SEED_FLAG = "health_app_seed_handbook_v1";
+// 模板内容迁移标记（每次要改"已导入过"的模板内容，就加一个新标记并写迁移逻辑）
+const MIGRATION_V2_FLAG = "health_app_handbook_migration_v2";
 
 // 《健身动作手册 v1 / 2026-06-12》的 A / B / C 三个模板。
 // 动作名用「中文 日本語」（中文看懂动作，日语方便在健身房按机器标牌找到它）。
@@ -39,7 +41,7 @@ const HANDBOOK_TEMPLATES = [
   {
     name: "Day B · 背+臀髋",
     exercises: [
-      ["高脚杯深蹲 ゴブレットスクワット", "腿·臀"],
+      ["史密斯机深蹲 スミススクワット", "腿·臀"],
       ["高位下拉 ラットプルダウン", "背阔肌"],
       ["坐姿划船 ローロウ", "背中部"],
       ["蝴蝶机夹胸 ペクトラルフライ", "胸"],
@@ -57,6 +59,7 @@ const HANDBOOK_TEMPLATES = [
       ["史密斯上斜推 スミスインクライン", "上胸·肩"],
       ["臀冲 ヒップスラスト", "臀·盆底"],
       ["髋内收 アダクター", "大腿内侧"],
+      ["俯卧撑 プッシュアップ", "胸·三头·核心"],
     ],
   },
 ];
@@ -87,5 +90,46 @@ export async function maybeSeedHandbook() {
   } catch (e) {
     // 导入失败不应影响正常登录使用，静默即可
     console.warn("seed handbook skipped:", e);
+  }
+}
+
+/**
+ * 一次性内容迁移（v2，2026-06-13）：把聶星辰账号里【已导入过】的旧模板更新到新版。
+ *   · Day B：高脚杯深蹲 ゴブレットスクワット → 史密斯机深蹲 スミススクワット
+ *   · Day C：末尾追加 俯卧撑 プッシュアップ（自重）
+ * 因为导入只跑一次（SEED_FLAG 已置位），改 seed 数据不会动到现有模板，故需要这段。
+ * 幂等：按动作名匹配，改过/加过就不再重复；并用 MIGRATION_V2_FLAG 兜底。
+ * 必须在 Auth.initAfterLogin() 之后调用。
+ */
+export async function maybeMigrateHandbook() {
+  try {
+    if ((getUsername() || "").trim() !== OWNER) return;
+    if (localStorage.getItem(MIGRATION_V2_FLAG)) return;
+
+    const templates = await Store.getCollection("templates");
+    let changed = false;
+
+    // ① 高脚杯深蹲 → 史密斯机深蹲（在任意模板里找到就替换）
+    for (const tpl of templates) {
+      for (const ex of tpl.exercises) {
+        if (ex.exercise_name === "高脚杯深蹲 ゴブレットスクワット") {
+          ex.exercise_name = "史密斯机深蹲 スミススクワット";
+          ex.target_muscle = "腿·臀";
+          changed = true;
+        }
+      }
+    }
+
+    // ② Day C 末尾追加 俯卧撑（若尚无）
+    const dayC = templates.find((t) => /Day C/.test(t.name));
+    if (dayC && !dayC.exercises.some((e) => e.exercise_name === "俯卧撑 プッシュアップ")) {
+      dayC.exercises.push(newTemplateExercise("俯卧撑 プッシュアップ", "胸·三头·核心"));
+      changed = true;
+    }
+
+    if (changed) await Store.saveCollection("templates", templates);
+    localStorage.setItem(MIGRATION_V2_FLAG, "1");
+  } catch (e) {
+    console.warn("handbook migration v2 skipped:", e);
   }
 }

@@ -1,14 +1,18 @@
 // ============================================================
 // ocr.js —— 体脂秤截图识别（本地、免费，用 Tesseract.js）
 // ------------------------------------------------------------
-// 思路（对应项目文档 4.1/4.3 方案二）：
-//   1) 裁掉顶部手机状态栏（去掉时间/电量这类干扰数字）。
-//   2) OCR 整张图。
-//   3) 按阅读顺序抽出所有「带小数的数字」——正好对应那 11 项指标，
-//      顺序固定（体重→…→骨量），所以截图上下平移都不影响。
-//   4) 返回数组，交给界面按 WEIGHT_FIELDS 顺序填入、用户核对后保存。
-// 识别结果不强求 100% 准，所以保留「填好后人工核对」这一步。
-// 将来若想更准，可在此处切换为 AI 视觉方案（文档 4.3 方案一）。
+// v2（2026-06-13）针对「后面的字段（肌肉量/骨量）常常识别不到」的修复：
+//   旧版用纯英文 OCR 整张图、再全局正则抓所有带小数的数字、按顺序填。
+//   问题：中文标签/图标的笔画会被英文 OCR 误读成「带小数的数字」，这些
+//   假数字混在前面，挤掉了名额，导致真正靠后的指标溢出、永远填不到。
+//
+// 新做法（两招）：
+//   ① 给 Tesseract 设「数字白名单」(tessedit_char_whitelist)，只认 0-9 和小数点，
+//      中文/图标几乎不会再被误读成数字 → 噪声大幅减少。
+//   ② 逐行解析：体脂秤每一行右侧就是该指标的数值，所以「每行取最右边的那个
+//      小数」= 该行指标值，从上到下排好 → 天然对齐 11 项，不再错位溢出。
+//   带兜底：若逐行没抽到（个别图把数字挤成一行），退回全局顺序抽取。
+// 仍保留「识别后人工核对」这一步，不强求 100% 准。
 // ============================================================
 
 const TESSERACT_CDN = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
@@ -24,7 +28,7 @@ function loadTesseract() {
   });
 }
 
-// 读入图片 → 裁掉顶部状态栏 → 返回 canvas
+// 读入图片 → 裁掉顶部状态栏（时间/电量等干扰）→ 返回 canvas
 function fileToCroppedCanvas(file, topCropFrac = 0.06) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -44,21 +48,46 @@ function fileToCroppedCanvas(file, topCropFrac = 0.06) {
   });
 }
 
+// 从一行文字里取「最右边的小数」作为该行的指标值（数值在右、状态词在左）。
+function lastDecimalInLine(line) {
+  const ms = line.match(/\d{1,3}\.\d{1,2}/g);
+  return ms ? ms[ms.length - 1] : null;
+}
+
+// 把识别文本解析成从上到下的数值数组。
+function parseValues(text) {
+  const values = [];
+  for (const line of text.split(/\r?\n/)) {
+    const v = lastDecimalInLine(line);
+    if (v) values.push(v);
+  }
+  // 兜底：逐行抽得太少（有的图把数字挤成一行）→ 退回全局顺序抽取
+  if (values.length < 6) {
+    const all = text.match(/\d{1,3}\.\d{1,2}/g) || [];
+    if (all.length > values.length) return all;
+  }
+  return values;
+}
+
 /**
- * 识别体脂秤截图，返回「带一位/两位小数的数字」字符串数组（按从上到下顺序）。
+ * 识别体脂秤截图，返回「带小数的指标值」字符串数组（按从上到下顺序）。
  * @param {File} file 用户选的截图
  * @param {(p:number)=>void} onProgress 识别进度 0~1
  */
 export async function extractNumbersFromImage(file, onProgress) {
   await loadTesseract();
   const canvas = await fileToCroppedCanvas(file);
-  const { data } = await window.Tesseract.recognize(canvas, "eng", {
+  const worker = await window.Tesseract.createWorker("eng", 1, {
     logger: (m) => {
       if (m.status === "recognizing text" && onProgress) onProgress(m.progress);
     },
   });
-  const text = (data && data.text) || "";
-  // 抽出形如 97.3 / 31.4 / 3.4 的数字（带小数点），按出现顺序
-  const matches = text.match(/\d{1,3}\.\d{1,2}/g) || [];
-  return matches;
+  try {
+    // 只认数字和小数点，过滤掉中文标签/图标被误读成数字的噪声
+    await worker.setParameters({ tessedit_char_whitelist: "0123456789." });
+    const { data } = await worker.recognize(canvas);
+    return parseValues((data && data.text) || "");
+  } finally {
+    await worker.terminate();
+  }
 }

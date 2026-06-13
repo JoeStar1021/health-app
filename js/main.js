@@ -9,7 +9,7 @@ import {
 } from "./models.js";
 import { t, getLang, setLang, localeTag } from "./i18n.js";
 import * as Auth from "./supabase.js";
-import { maybeSeedHandbook } from "./seed.js";
+import { maybeSeedHandbook, maybeMigrateHandbook } from "./seed.js";
 import { INTRO, GROUPS, getExerciseDetail } from "./handbook.js";
 
 // ---------- 小工具 ----------
@@ -128,6 +128,7 @@ async function LoginScreen(root) {
       await Auth.signIn(username, pw);
       await Auth.initAfterLogin();
       await maybeSeedHandbook(); // 仅聶星辰账号会导入手册模板，其余账号无操作
+      await maybeMigrateHandbook(); // 仅聶星辰：把已导入的旧模板内容更新到新版
       routeAfterLogin();
     } catch (e) {
       msg.style.color = "var(--red)";
@@ -754,7 +755,7 @@ async function WeightScreen(root) {
           if (inp) inp.value = nums[i];
         }
       });
-      statusEl.textContent = t("ocr_done");
+      statusEl.textContent = t("ocr_done_n", { n: nums.length, total: WEIGHT_FIELDS.length });
       toast(t("ocr_done"));
     } catch (e) {
       statusEl.textContent = t("ocr_failed");
@@ -867,6 +868,7 @@ Auth.setStatusListener(() => {
     try {
       await Auth.initAfterLogin();
       await maybeSeedHandbook(); // 仅聶星辰账号会导入手册模板，其余账号无操作
+      await maybeMigrateHandbook(); // 仅聶星辰：把已导入的旧模板内容更新到新版
       routeAfterLogin(); // 按角色分流：管理员 → 管理界面，普通用户 → 首页
     } catch (e) {
       // 离线/连不上云：普通用户用本地缓存进首页；管理员需联网（进管理界面会提示加载失败）
