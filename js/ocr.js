@@ -1,17 +1,20 @@
 // ============================================================
 // ocr.js —— 体脂秤截图识别（本地、免费，用 Tesseract.js）
 // ------------------------------------------------------------
-// v2（2026-06-13）针对「后面的字段（肌肉量/骨量）常常识别不到」的修复：
-//   旧版用纯英文 OCR 整张图、再全局正则抓所有带小数的数字、按顺序填。
-//   问题：中文标签/图标的笔画会被英文 OCR 误读成「带小数的数字」，这些
-//   假数字混在前面，挤掉了名额，导致真正靠后的指标溢出、永远填不到。
-//
-// 新做法（两招）：
-//   ① 给 Tesseract 设「数字白名单」(tessedit_char_whitelist)，只认 0-9 和小数点，
-//      中文/图标几乎不会再被误读成数字 → 噪声大幅减少。
-//   ② 逐行解析：体脂秤每一行右侧就是该指标的数值，所以「每行取最右边的那个
-//      小数」= 该行指标值，从上到下排好 → 天然对齐 11 项，不再错位溢出。
-//   带兜底：若逐行没抽到（个别图把数字挤成一行），退回全局顺序抽取。
+// v3（2026-06-14，用用户真实截图调通）：
+//   之前两版的坑（已修）：
+//     · 纯英文 OCR 整图 + 全局抓「带小数的数字」→ 中文标签被误读成假数字、
+//       且部分行的小数点会被漏读（如 31.5 读成 315），导致错位、尾部丢失。
+//     · 加「数字白名单」反而把中文状态词（肥胖/高/标准）强行塞成数字，
+//       粘到数值前面（96.1 → 896.1），更糟。
+//   v3 做法（实测对这台体脂秤 11 项全中）：
+//     ① 不用白名单。OCR 拿「词级坐标框」(recognize 的 blocks 输出)。
+//     ② 只保留「以数字开头」的词 → 中文状态词、底部导航栏乱码(如 E24:)
+//        自然被过滤掉。
+//     ③ 按 y 坐标分行、每行取最右的那个数字词 = 该行指标值，从上到下排好。
+//     ④ 该体脂秤每个数值都是 1 位小数；若某行小数点被漏读（如 315/658），
+//        就在末位前补回小数点 → 31.5 / 65.8。
+//   带兜底：若拿不到坐标框（引擎版本差异），退回逐行文本解析。
 // 仍保留「识别后人工核对」这一步，不强求 100% 准。
 // ============================================================
 
@@ -48,29 +51,54 @@ function fileToCroppedCanvas(file, topCropFrac = 0.06) {
   });
 }
 
-// 从一行文字里取「最右边的小数」作为该行的指标值（数值在右、状态词在左）。
-function lastDecimalInLine(line) {
-  const ms = line.match(/\d{1,3}\.\d{1,2}/g);
-  return ms ? ms[ms.length - 1] : null;
+// 该体脂秤数值都是 1 位小数：没有小数点的就在末位前补回（315→31.5；658→65.8）。
+function reformatValue(numStr) {
+  if (numStr.includes(".")) return numStr;
+  if (numStr.length >= 2) return numStr.slice(0, -1) + "." + numStr.slice(-1);
+  return numStr;
 }
 
-// 把识别文本解析成从上到下的数值数组。
-function parseValues(text) {
+// 从一个词里取「开头的数字」作为值；不是以数字开头（中文状态词、E24: 之类）→ null。
+function valueFromWord(text) {
+  const m = String(text).match(/^\d{1,4}(?:\.\d{1,2})?/);
+  return m ? reformatValue(m[0]) : null;
+}
+
+// 主解析：用词级坐标框，按行取最右数字词，从上到下。
+function parseFromBlocks(data) {
+  const words = [];
+  (data.blocks || []).forEach((b) => (b.paragraphs || []).forEach((p) =>
+    (p.lines || []).forEach((l) => (l.words || []).forEach((w) => {
+      const val = valueFromWord(w.text);
+      if (val != null && w.bbox) words.push({ val, x: w.bbox.x0, y: w.bbox.y0 });
+    }))));
+  if (!words.length) return null;
+  words.sort((a, b) => a.y - b.y);
+  const rows = [];
+  const ROW_GAP = 40; // y 相差 40px 内视为同一行
+  for (const w of words) {
+    const last = rows[rows.length - 1];
+    if (last && Math.abs(w.y - last.y) <= ROW_GAP) {
+      if (w.x > last.x) { last.x = w.x; last.val = w.val; } // 同一行取更靠右的（数值在右）
+    } else {
+      rows.push({ ...w });
+    }
+  }
+  return rows.map((r) => r.val);
+}
+
+// 兜底：没有坐标框时，逐行文本取最右数字。
+function parseFromText(text) {
   const values = [];
   for (const line of text.split(/\r?\n/)) {
-    const v = lastDecimalInLine(line);
-    if (v) values.push(v);
-  }
-  // 兜底：逐行抽得太少（有的图把数字挤成一行）→ 退回全局顺序抽取
-  if (values.length < 6) {
-    const all = text.match(/\d{1,3}\.\d{1,2}/g) || [];
-    if (all.length > values.length) return all;
+    const toks = line.match(/\d{1,4}(?:\.\d{1,2})?/g);
+    if (toks) values.push(reformatValue(toks[toks.length - 1]));
   }
   return values;
 }
 
 /**
- * 识别体脂秤截图，返回「带小数的指标值」字符串数组（按从上到下顺序）。
+ * 识别体脂秤截图，返回指标值字符串数组（按从上到下顺序）。
  * @param {File} file 用户选的截图
  * @param {(p:number)=>void} onProgress 识别进度 0~1
  */
@@ -83,10 +111,8 @@ export async function extractNumbersFromImage(file, onProgress) {
     },
   });
   try {
-    // 只认数字和小数点，过滤掉中文标签/图标被误读成数字的噪声
-    await worker.setParameters({ tessedit_char_whitelist: "0123456789." });
-    const { data } = await worker.recognize(canvas);
-    return parseValues((data && data.text) || "");
+    const { data } = await worker.recognize(canvas, {}, { blocks: true });
+    return parseFromBlocks(data) || parseFromText((data && data.text) || "");
   } finally {
     await worker.terminate();
   }
