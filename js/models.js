@@ -37,11 +37,13 @@ export function newTemplate(name) {
 }
 
 /** 模板里的一个动作定义 */
-export function newTemplateExercise(name, targetMuscle) {
+export function newTemplateExercise(name, targetMuscle, targetSets, repHint) {
   return {
     exercise_name: name || "",
     target_muscle: targetMuscle || "",
     equipment_type: "", // 【预留】杠铃/哑铃/器械/自重
+    target_sets: targetSets || 0,   // 计划组数（0=不限）
+    rep_hint: repHint || "",        // 计划次数区间，如 "10-12"
   };
 }
 
@@ -66,6 +68,9 @@ export function newSessionExercise(name, targetMuscle) {
     note: "",                    // 【必填可空】体感备注
     status: "not_started",       // not_started / completed / skipped
     sets: [],
+    target_sets: 0,              // 计划组数（从模板带过来，仅显示提示用）
+    rep_hint: "",                // 计划次数区间（从模板带过来）
+    next_start_weight: "",       // 给「下次」建议的起始重量（本次记，下次显示）
   };
 }
 

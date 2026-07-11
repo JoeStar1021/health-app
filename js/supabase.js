@@ -17,6 +17,14 @@ const PROJECT_REF = "nhbguzxoelcvwovuhkps";
 const LOCAL_PREFIX = "health_app_";
 const COLLECTIONS = ["templates", "strength_sessions", "weight", "diet"];
 
+// —— 「本地有未确认上传的改动」标记（防闪退丢数据）——
+// 每次存本地就打标记；成功上传云端后才清除。重启时若某类数据仍有标记，
+// 说明上次没传完（可能崩溃了）→ 以本地为准、重新上传，绝不用云端覆盖本地。
+const PENDING_PREFIX = LOCAL_PREFIX + "pending_";
+function markPending(key) { localStorage.setItem(PENDING_PREFIX + key, "1"); }
+function clearPending(key) { localStorage.removeItem(PENDING_PREFIX + key); }
+function isPending(key) { return localStorage.getItem(PENDING_PREFIX + key) === "1"; }
+
 let sb = null;
 let currentUser = null;
 let statusListener = null;
@@ -64,6 +72,7 @@ const supaBackend = {
   async load(key) { const r = localStorage.getItem(LOCAL_PREFIX + key); return r ? JSON.parse(r) : null; },
   async save(key, value) {
     localStorage.setItem(LOCAL_PREFIX + key, JSON.stringify(value)); // 即时本地
+    markPending(key);                                                // 标记「未确认上传」
     schedulePush(key, value);                                        // 后台同步云端
   },
 };
@@ -85,9 +94,10 @@ async function flushKey(key) {
       { onConflict: "user_id,collection" }
     );
     if (error) throw error;
+    if (!(key in pending)) clearPending(key); // 已确认上传且无更新的改动 → 清除标记
     if (Object.keys(pending).length === 0) setStatus("synced");
   } catch (e) {
-    pending[key] = value; // 失败重新入队，下次保存或恢复网络后再试
+    pending[key] = value; // 失败重新入队，下次保存或恢复网络后再试（pending 标记保留）
     setStatus("error");
   }
 }
@@ -113,7 +123,7 @@ export async function signIn(username, password) {
 export async function signOut() {
   try { const c = await getClient(); await c.auth.signOut(); } catch (e) {}
   // 清掉本地数据缓存，避免同一台设备换人登录时串数据
-  COLLECTIONS.forEach((k) => localStorage.removeItem(LOCAL_PREFIX + k));
+  COLLECTIONS.forEach((k) => { localStorage.removeItem(LOCAL_PREFIX + k); clearPending(k); });
   localStorage.removeItem(LOCAL_PREFIX + "role");
   currentUser = null; authState.user = null; setStatus("loggedout");
 }
@@ -188,8 +198,19 @@ async function pullAndMaybeMigrate() {
   // 防止别人在你设备上登录时把你的数据上传到他账号。
   const fromDrive = localStorage.getItem(LOCAL_PREFIX + "use_drive") === "1";
   for (const key of COLLECTIONS) {
-    if (byCol[key] != null) {
-      localStorage.setItem(LOCAL_PREFIX + key, JSON.stringify(byCol[key])); // 云端有 → 覆盖本地
+    if (isPending(key)) {
+      // 本地有未确认上传的改动（可能是上次崩溃前记录的）→ 本地为准，重新上传，
+      // 绝不用云端覆盖本地。这样闪退后重开，训练进度不会丢。
+      const r = localStorage.getItem(LOCAL_PREFIX + key);
+      const val = r ? JSON.parse(r) : [];
+      try {
+        const { error: upErr } = await c.from("user_data").upsert(
+          { user_id: currentUser.id, collection: key, data: val, updated_at: new Date().toISOString() },
+          { onConflict: "user_id,collection" });
+        if (!upErr) clearPending(key);
+      } catch (e) { /* 上传失败：保留标记与本地，下次再试 */ }
+    } else if (byCol[key] != null) {
+      localStorage.setItem(LOCAL_PREFIX + key, JSON.stringify(byCol[key])); // 云端有且本地无待同步 → 用云端
     } else if (fromDrive) {
       const r = localStorage.getItem(LOCAL_PREFIX + key);
       const val = r ? JSON.parse(r) : [];

@@ -249,3 +249,59 @@ input:disabled { background: #f0f0f3; color: #c4c4c8; }
 .hb-namelink svg { width: 18px; height: 18px; }
 .hb-namelink:active { opacity: .6; }
 .hb-namehint { font-size: 12px; margin: -2px 0 8px; }
+
+/* —— 首页月历 —— */
+.cal-card { padding: 12px 8px 14px; }
+.cal-head { display: flex; align-items: center; justify-content: space-between; padding: 0 6px 8px; }
+.cal-title { font-size: 17px; font-weight: 600; }
+.cal-nav {
+  background: none; border: none; color: var(--brand);
+  font-size: 22px; line-height: 1; padding: 4px 12px; cursor: pointer;
+}
+.cal-nav:active { opacity: .5; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+.cal-h { text-align: center; font-size: 11px; color: var(--muted); padding-bottom: 4px; }
+.cal-cell {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center;
+  min-height: 46px; padding-top: 3px;
+}
+.cal-cell.empty { min-height: 46px; }
+.cal-num {
+  width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; color: var(--ink);
+}
+.cal-num.today { background: var(--red); color: #fff; font-weight: 600; }
+.cal-wt {
+  font-size: 8.5px; color: var(--muted); line-height: 1;
+  margin-top: 2px; white-space: nowrap;
+}
+.cal-kg { font-size: 7px; margin-left: .5px; opacity: .8; }
+.cal-stamp {
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 36px; height: 36px; pointer-events: none; z-index: 2;
+}
+
+/* —— 动作记录页：目标 / 建议重量提示 —— */
+.rec-hint {
+  font-size: 13px; color: var(--ink);
+  background: #eef4ff; border-radius: 8px; padding: 7px 10px; margin: 4px 0;
+}
+.rec-hint.suggest { background: #fff4e5; }
+
+/* —— 动作历史（折叠式） —— */
+.hist-item { background: var(--card); border-radius: 12px; margin-bottom: 8px; overflow: hidden; }
+.hist-sum {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 13px var(--pad); cursor: pointer; font-size: 15px; list-style: none;
+}
+.hist-sum::-webkit-details-marker { display: none; }
+.hist-arrow { width: 18px; height: 18px; color: var(--muted); transition: transform .2s; flex: none; }
+.hist-item[open] .hist-arrow { transform: rotate(90deg); }
+.hist-table {
+  width: calc(100% - 24px); margin: 0 12px 10px;
+  border-collapse: collapse; font-size: 14px;
+}
+.hist-table th { color: var(--muted); font-weight: 400; font-size: 12px; text-align: center; padding: 4px 0; }
+.hist-table td { text-align: center; padding: 7px 0; border-top: 0.5px solid var(--sep); }

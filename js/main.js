@@ -259,32 +259,139 @@ async function AdminScreen(root) {
 // ============================================================
 // 首页 / 今日概览（文档第 2 节）
 // ============================================================
+// ---------- 首页月历 ----------
+// 视图月份（模块级，切换上/下月时保留）；null = 当前月
+let calView = null;
+
+function pad2(n) { return String(n).padStart(2, "0"); }
+function ymdKey(y, m, d) { return `${y}-${pad2(m + 1)}-${pad2(d)}`; }
+
+// —— 训练日边界：以凌晨 3 点为界（27 点制）——
+// 把时间往前推 3 小时再取日期：凌晨 0~3 点算「前一天」的训练日。
+const TRAIN_CUTOFF_MS = 3 * 3600 * 1000;
+function trainingDateKey(ts) {
+  const d = new Date(new Date(ts).getTime() - TRAIN_CUTOFF_MS);
+  return ymdKey(d.getFullYear(), d.getMonth(), d.getDate());
+}
+// 这次训练里「实际记录并保存过数据」= 至少有一组填了重量或次数
+function sessionHasData(s) {
+  return (s.exercises || []).some((e) => (e.sets || []).some((st) =>
+    (st.weight !== "" && st.weight != null) || (st.reps !== "" && st.reps != null)));
+}
+// 收尾：把已过「训练日窗口（次日凌晨3点）」的进行中会话处理掉——
+//   有数据 → 标记为完成（当作练完，不管有没有点"完成本次训练"）；
+//   纯空的 → 当作误点/演示，删除。返回处理后的会话数组。
+async function reconcileSessions(sessions) {
+  const nowKey = trainingDateKey(Date.now());
+  let changed = false;
+  const kept = [];
+  for (const s of sessions) {
+    if (s.status === "in_progress" && trainingDateKey(s.timestamp) !== nowKey) {
+      if (sessionHasData(s)) { s.status = "done"; kept.push(s); changed = true; }
+      else changed = true; // 丢弃空会话
+    } else {
+      kept.push(s);
+    }
+  }
+  if (changed) await Store.saveCollection("strength_sessions", kept);
+  return kept;
+}
+
+// 从记录里建：每天体重、每天训练的 A/B(/C)
+function buildDayMaps(weights, sessions) {
+  const wt = {};      // ymd -> "96.1"（当天最后一条）
+  for (const w of weights) {
+    if (!w.timestamp) continue;
+    if (w.weight === "" || w.weight == null) continue;
+    wt[w.timestamp.slice(0, 10)] = String(w.weight);
+  }
+  // 盖章：只算「记录并保存过数据」的训练；归属到训练日（凌晨3点为界）
+  const letter = {};  // trainingDateKey -> 'A' | 'B' | 'C'
+  for (const s of sessions) {
+    if (!s.timestamp || !sessionHasData(s)) continue;
+    const m = (s.workout_day_template || "").match(/Day\s*([A-Za-z])/);
+    if (m) letter[trainingDateKey(s.timestamp)] = m[1].toUpperCase();
+  }
+  return { wt, letter };
+}
+
+// 印章：外圈 + 大写字母；A=红 B=蓝（其余=绿，暂给 C 用，日后 C 移除）。
+// 淡墨 + 断墨效果：feTurbulence 生成噪声当作 alpha 蒙版，抠掉一部分 → 像没吸饱墨的章。
+function stampSvg(letter, dayNum) {
+  const color = letter === "A" ? "#c1272d" : letter === "B" ? "#1c5bb0" : "#2e7d46";
+  const rot = ((dayNum * 37) % 21) - 10;      // -10~10 度，每天略不同
+  const seed = (dayNum * 13) % 100;
+  const fid = `stmp${letter}${dayNum}`;
+  return `<svg class="cal-stamp" viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs><filter id="${fid}" x="-20%" y="-20%" width="140%" height="140%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.72" numOctaves="2" seed="${seed}" result="n"/>
+      <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 11 -4.7" result="m"/>
+      <feComposite in="SourceGraphic" in2="m" operator="in"/>
+    </filter></defs>
+    <g filter="url(#${fid})" transform="rotate(${rot} 22 22)" fill="none" stroke="${color}" opacity="0.5">
+      <circle cx="22" cy="22" r="16" stroke-width="2.4"/>
+      <text x="22" y="29.5" text-anchor="middle" font-size="21" font-weight="800" fill="${color}" stroke="none"
+        font-family="-apple-system,Arial,sans-serif">${letter}</text>
+    </g>
+  </svg>`;
+}
+
+function calWeekHeads() {
+  return getLang() === "ja"
+    ? ["日", "月", "火", "水", "木", "金", "土"]
+    : ["日", "一", "二", "三", "四", "五", "六"];
+}
+
+function calendarCardHtml(weights, sessions) {
+  const now = new Date();
+  const view = calView || { y: now.getFullYear(), m: now.getMonth() };
+  calView = view;
+  const { wt, letter } = buildDayMaps(weights, sessions);
+  const startDow = new Date(view.y, view.m, 1).getDay();          // 0=周日
+  const daysInMonth = new Date(view.y, view.m + 1, 0).getDate();
+  const todayKey = ymdKey(now.getFullYear(), now.getMonth(), now.getDate());
+
+  const heads = calWeekHeads().map((h) => `<div class="cal-h">${h}</div>`).join("");
+  let cells = "";
+  for (let i = 0; i < startDow; i++) cells += `<div class="cal-cell empty"></div>`;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = ymdKey(view.y, view.m, d);
+    const w = wt[key], L = letter[key];
+    cells += `<div class="cal-cell">
+      <div class="cal-num${key === todayKey ? " today" : ""}">${d}</div>
+      ${w != null ? `<div class="cal-wt">${esc(w)}<span class="cal-kg">kg</span></div>` : ""}
+      ${L ? stampSvg(L, d) : ""}
+    </div>`;
+  }
+  const title = new Date(view.y, view.m, 1).toLocaleDateString(localeTag(), { year: "numeric", month: "long" });
+  return `<div class="card cal-card">
+    <div class="cal-head">
+      <button class="cal-nav" id="calPrev" aria-label="prev">‹</button>
+      <div class="cal-title">${title}</div>
+      <button class="cal-nav" id="calNext" aria-label="next">›</button>
+    </div>
+    <div class="cal-grid cal-heads">${heads}</div>
+    <div class="cal-grid cal-days">${cells}</div>
+  </div>`;
+}
+
 async function HomeScreen(root) {
-  const [sessions, weights, diets] = await Promise.all([
+  const [rawSessions, weights] = await Promise.all([
     Store.getCollection("strength_sessions"),
     Store.getCollection("weight"),
-    Store.getCollection("diet"),
   ]);
-  const today = todayStr();
-  const inProgress = sessions.find((s) => s.status === "in_progress");
-  const trainedToday = sessions.some((s) => s.timestamp.slice(0, 10) === today && s.status === "done");
-  const weighedToday = weights.some((w) => w.timestamp.slice(0, 10) === today);
-  const dietToday = diets.find((d) => d.date === today);
+  // 先收尾过期的进行中会话（次日凌晨3点后自动完成/清理空会话）
+  const sessions = await reconcileSessions(rawSessions);
+  // "继续未完成的训练"只在【本训练日内、且已记录并保存过数据】时出现
+  const inProgress = sessions.find((s) => s.status === "in_progress" && sessionHasData(s));
 
-  const status = (ok, txt) => `<div class="statusline"><span class="ic">${ok ? ICONS.check : ICONS.circle}</span>${txt}</div>`;
-  const weekday = new Date().toLocaleDateString(localeTag(), { month: "long", day: "numeric", weekday: "long" });
   const row = (id, icon, color, title, sub) => `
     <button class="row" id="${id}">${iconTile(icon, color)}
       <span class="row-text"><span class="row-title">${title}</span><span class="row-sub">${sub}</span></span>
       <span class="row-chev">${ICONS.chevR}</span></button>`;
 
   root.innerHTML = `
-    <div class="card">
-      <h2>${t("home_today")} · ${weekday}</h2>
-      ${status(trainedToday, trainedToday ? t("today_trained_done") : t("today_trained_none"))}
-      ${status(weighedToday, weighedToday ? t("today_weight_done") : t("today_weight_none"))}
-      ${status(!!dietToday, dietToday ? (dietToday.adhered ? t("today_diet_yes") : t("today_diet_no")) : t("today_diet_none"))}
-    </div>
+    ${calendarCardHtml(weights, sessions)}
 
     ${inProgress ? `<div class="group">${row("resume", "dumbbell", "var(--brand)", t("resume_title"), t("resume_sub", { name: esc(inProgress.workout_day_template) }))}</div>` : ""}
 
@@ -305,6 +412,18 @@ async function HomeScreen(root) {
   `;
 
   renderLangSwitch();
+
+  // 月历上/下月切换
+  $("#calPrev", root).onclick = () => {
+    const v = calView;
+    calView = v.m === 0 ? { y: v.y - 1, m: 11 } : { y: v.y, m: v.m - 1 };
+    render();
+  };
+  $("#calNext", root).onclick = () => {
+    const v = calView;
+    calView = v.m === 11 ? { y: v.y + 1, m: 0 } : { y: v.y, m: v.m + 1 };
+    render();
+  };
 
   $("#toStrength", root).onclick = () => navigate(StrengthPickScreen, "title_pick");
   $("#toWeight", root).onclick = () => navigate(WeightScreen, "title_weight");
@@ -397,14 +516,9 @@ async function HandbookExerciseScreen(root, key) {
     <div class="group hb-card">
       <h2 class="hb-title">${esc(d.names.zh)}${d.star ? " ⭐" : ""}</h2>
       <div class="hb-sub">${esc(d.names.ja)} ・ ${esc(d.names.en)}</div>
-      ${block(t("hb_equipment"), esc(d.equipment))}
-      ${block(t("hb_target"), esc(d.target))}
-      ${list(t("hb_steps"), d.steps)}
       ${block(t("hb_feel"), esc(d.feel))}
       ${block(t("hb_breathing"), esc(d.breathing))}
       ${ul(t("hb_mistakes"), d.mistakes)}
-      ${block(t("hb_progress"), esc(d.progress))}
-      ${block(t("hb_regress"), esc(d.regress))}
       <a class="btn hb-video" href="${esc(d.video)}" target="_blank" rel="noopener noreferrer">${t("handbook_video")}</a>
     </div>`;
 }
@@ -418,6 +532,8 @@ async function startSession(templateId) {
   session.exercises = tpl.exercises.map((e) => {
     const ex = newSessionExercise(e.exercise_name, e.target_muscle);
     ex.equipment_type = e.equipment_type || "";
+    ex.target_sets = e.target_sets || 0;
+    ex.rep_hint = e.rep_hint || "";
     return ex;
   });
   const sessions = await Store.getCollection("strength_sessions");
@@ -499,22 +615,34 @@ async function findLastRecord(exerciseName, excludeSessionId) {
     if (ex) {
       const formal = ex.sets.filter((x) => x.set_type === "normal" && (x.weight !== "" || x.reps !== ""));
       const use = formal.length ? formal : ex.sets;
-      return { date: s.timestamp, sets: use };
+      return { date: s.timestamp, sets: use, nextWeight: ex.next_start_weight || "" };
     }
   }
   return null;
+}
+
+// 找某个动作「上次自己给下次定的起始重量」（可能与上次有成绩记录的那次不同）
+async function findLastSuggestedWeight(exerciseName, excludeSessionId) {
+  const sessions = (await Store.getCollection("strength_sessions"))
+    .filter((s) => s.id !== excludeSessionId)
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  for (const s of sessions) {
+    const ex = s.exercises.find((e) => e.exercise_name === exerciseName && e.next_start_weight);
+    if (ex) return ex.next_start_weight;
+  }
+  return "";
 }
 
 // —— 单个动作的记录界面（文档 3.2 第 3-6 步）——
 async function ExerciseRecordScreen(root, sessionId, exIndex) {
   const session = await getSession(sessionId);
   const ex = session.exercises[exIndex];
-  const last = await findLastRecord(ex.exercise_name, sessionId);
+  const suggested = await findLastSuggestedWeight(ex.exercise_name, sessionId);
 
-  const lastHtml = last
-    ? `<div class="lasttime"><b>${t("last_time", { date: fmtDate(last.date) })}</b>${
-        last.sets.map((s) => `${s.weight || "?"}kg×${s.reps || "?"}`).join(" / ")}</div>`
-    : `<div class="lasttime muted">${t("no_history")}</div>`;
+  const topHint = `
+    ${(ex.target_sets || ex.rep_hint) ? `<div class="rec-hint">🎯 ${t("target_volume", { sets: ex.target_sets || "?", reps: ex.rep_hint || "?" })}</div>` : ""}
+    ${suggested ? `<div class="rec-hint suggest">💡 ${t("last_suggest_weight", { w: esc(suggested) })}</div>` : ""}
+    <button class="btn ghost small" id="histBtn" style="width:100%;margin:2px 0 10px">${t("view_ex_history")}</button>`;
 
   if (ex.sets.length === 0) ex.sets.push(newSet());
 
@@ -544,7 +672,7 @@ async function ExerciseRecordScreen(root, sessionId, exIndex) {
     <div class="card">
       <h2>${nameHtml} ${ex.target_muscle ? `<span class="tag">${esc(ex.target_muscle)}</span>` : ""}</h2>
       ${detail ? `<div class="hb-namehint muted">${t("handbook_tap")}</div>` : ""}
-      ${lastHtml}
+      ${topHint}
       <div class="set-head"><div></div><div>${t("col_weight")}</div><div>${t("col_reps")}</div><div>${t("col_rir")}</div><div>${t("col_type")}</div></div>
       <div id="sets">${setRowsHtml()}</div>
       <button class="btn secondary small" id="addSet">${t("add_set")}</button>
@@ -553,6 +681,11 @@ async function ExerciseRecordScreen(root, sessionId, exIndex) {
     <label class="field card" style="display:block">
       <span class="lbl">${t("note_label")}</span>
       <textarea id="note" placeholder="${t("note_ph")}">${esc(ex.note)}</textarea>
+    </label>
+    <label class="field card" style="display:block">
+      <span class="lbl">${t("next_weight_label")}</span>
+      <input type="number" inputmode="decimal" min="0" id="nextW" placeholder="${t("next_weight_ph")}" value="${esc(ex.next_start_weight || "")}" />
+      <div class="muted" style="font-size:12px;margin-top:6px">${t("next_weight_hint")}</div>
     </label>
     <div class="btn-row">
       <button class="btn secondary" id="skip">${t("skip_ex")}</button>
@@ -594,6 +727,11 @@ async function ExerciseRecordScreen(root, sessionId, exIndex) {
   $("#note", root).addEventListener("input", async (e) => {
     ex.note = e.target.value; await saveSession(session);
   });
+  $("#nextW", root).addEventListener("input", async (e) => {
+    ex.next_start_weight = e.target.value; await saveSession(session);
+  });
+  $("#histBtn", root).onclick = () =>
+    navigate((r) => ExerciseHistoryScreen(r, ex.exercise_name, sessionId), "title_ex_history");
   if (detail) $("#hbName", root).onclick = () =>
     navigate((r) => HandbookExerciseScreen(r, ex.exercise_name), "title_handbook");
   $("#done", root).onclick = async () => {
@@ -602,6 +740,33 @@ async function ExerciseRecordScreen(root, sessionId, exIndex) {
   $("#skip", root).onclick = async () => {
     ex.status = "skipped"; await saveSession(session); toast(t("marked_skip")); back();
   };
+}
+
+// —— 某个动作的历史记录（折叠式：折叠只看日期时间，展开看每组表现）——
+async function ExerciseHistoryScreen(root, exerciseName, excludeSessionId) {
+  const sessions = (await Store.getCollection("strength_sessions"))
+    .filter((s) => s.id !== excludeSessionId)
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  const entries = [];
+  for (const s of sessions) {
+    const ex = s.exercises.find((e) => e.exercise_name === exerciseName);
+    if (!ex) continue;
+    const sets = (ex.sets || []).filter((x) => x.weight !== "" || x.reps !== "");
+    if (!sets.length) continue;
+    entries.push({ ts: s.timestamp, sets });
+  }
+  root.innerHTML = `
+    <div class="card"><h2 style="margin:0">${esc(exerciseName)}</h2>
+      <div class="muted" style="font-size:13px">${t("ex_history_sub", { n: entries.length })}</div></div>
+    ${entries.length ? entries.map((en) => `
+      <details class="hist-item">
+        <summary class="hist-sum"><span>${fmtDate(en.ts)}</span><span class="hist-arrow">${ICONS.chevR}</span></summary>
+        <table class="hist-table">
+          <thead><tr><th>${t("col_set")}</th><th>${t("col_weight")}</th><th>${t("col_reps")}</th><th>RIR</th></tr></thead>
+          <tbody>${en.sets.map((st, i) => `<tr><td>${i + 1}</td><td>${esc(st.weight || "-")}</td><td>${esc(st.reps || "-")}</td><td>${esc(st.rpe_rir || "-")}</td></tr>`).join("")}</tbody>
+        </table>
+      </details>`).join("") : `<div class="empty">${t("no_history")}</div>`}
+  `;
 }
 
 // —— 临时添加菜单外动作（文档 3.3）——

@@ -22,47 +22,37 @@ const OWNER = "聶星辰";
 const SEED_FLAG = "health_app_seed_handbook_v1";
 // 模板内容迁移标记（每次要改"已导入过"的模板内容，就加一个新标记并写迁移逻辑）
 const MIGRATION_V2_FLAG = "health_app_handbook_migration_v2";
+const MIGRATION_V3_FLAG = "health_app_handbook_migration_v3"; // 简化成 A/B 两套菜单
 
-// 《健身动作手册 v1 / 2026-06-12》的 A / B / C 三个模板。
-// 动作名用「中文 日本語」（中文看懂动作，日语方便在健身房按机器标牌找到它）。
-// target_muscle 用简短中文。
+// 训练菜单（2026-06-14 起，朋友帮忙简化为 Day A / Day B 两套）。
+// 动作名「中文 日本語」；每项 [动作名, 目标部位, 计划组数, 计划次数]。
 const HANDBOOK_TEMPLATES = [
   {
-    name: "Day A · 腿+胸肩",
+    name: "Day A · 胸/肩/背",
     exercises: [
-      ["腿举 レッグプレス", "大腿·臀"],
-      ["坐姿推胸 チェストプレス", "胸"],
-      ["坐姿腿弯举 レッグカール", "腘绳肌"],
-      ["坐姿肩推 ショルダープレス", "肩"],
-      ["臀冲 ヒップスラスト", "臀·盆底"],
-      ["坐姿卷腹 アブドミナルクランチ", "腹"],
+      ["坐姿推胸 チェストプレス", "胸", 6, "10-12"],
+      ["坐姿肩推 ショルダープレス", "肩", 3, "10-14"],
+      ["侧向肩推 サイドプレス", "肩", 3, "10-14"],
+      ["辅助引体 チンニングマシン", "背", 6, "10-12"],
     ],
   },
   {
-    name: "Day B · 背+臀髋",
+    name: "Day B · 腿/肩",
     exercises: [
-      ["史密斯机深蹲 スミススクワット", "腿·臀"],
-      ["高位下拉 ラットプルダウン", "背阔肌"],
-      ["坐姿划船 ローロウ", "背中部"],
-      ["蝴蝶机夹胸 ペクトラルフライ", "胸"],
-      ["髋外展 アブダクター", "臀中肌"],
-      ["背伸展 バックエクステンション", "下背·臀"],
-      ["转体机 ロータリートルソー", "腹斜肌"],
-    ],
-  },
-  {
-    name: "Day C · 后链+全身",
-    exercises: [
-      ["罗马尼亚硬拉 ルーマニアンデッドリフト", "臀·腘绳·下背"],
-      ["腿屈伸 レッグエクステンション", "股四头肌"],
-      ["辅助引体/双杠 チン＆ディップ", "背·臂"],
-      ["史密斯上斜推 スミスインクライン", "上胸·肩"],
-      ["臀冲 ヒップスラスト", "臀·盆底"],
-      ["髋内收 アダクター", "大腿内侧"],
-      ["俯卧撑 プッシュアップ", "胸·三头·核心"],
+      ["腿举 45°レッグプレス", "腿", 7, "10-14"],
+      ["提踵 カーフプレス", "小腿", 4, "10-14"],
+      ["坐姿划船 シーテッドロー", "背", 5, "10-12"],
     ],
   },
 ];
+
+// 由定义构建一个模板对象
+function buildTemplate(def) {
+  const tpl = newTemplate(def.name);
+  tpl.exercises = def.exercises.map(([name, muscle, sets, reps]) =>
+    newTemplateExercise(name, muscle, sets, reps));
+  return tpl;
+}
 
 /**
  * 登录成功后调用：仅当登录用户名为聶星辰时，把手册模板导入其本人账号。
@@ -78,11 +68,7 @@ export async function maybeSeedHandbook() {
     let added = 0;
     for (const def of HANDBOOK_TEMPLATES) {
       if (existingNames.has(def.name)) continue;               // 按名查重，绝不重复
-      const tpl = newTemplate(def.name);
-      tpl.exercises = def.exercises.map(([name, muscle]) =>
-        newTemplateExercise(name, muscle)
-      );
-      templates.push(tpl);
+      templates.push(buildTemplate(def));
       added++;
     }
     if (added > 0) await Store.saveCollection("templates", templates);
@@ -131,5 +117,16 @@ export async function maybeMigrateHandbook() {
     localStorage.setItem(MIGRATION_V2_FLAG, "1");
   } catch (e) {
     console.warn("handbook migration v2 skipped:", e);
+  }
+
+  // —— 迁移 v3（2026-06-14）：把菜单整体换成新的 Day A / Day B 两套 ——
+  // 朋友帮忙简化了菜单。这里对聶星辰账号「整体替换」现有模板（旧 A/B/C 作废）。
+  try {
+    if ((getUsername() || "").trim() !== OWNER) return;
+    if (localStorage.getItem(MIGRATION_V3_FLAG)) return;
+    await Store.saveCollection("templates", HANDBOOK_TEMPLATES.map(buildTemplate));
+    localStorage.setItem(MIGRATION_V3_FLAG, "1");
+  } catch (e) {
+    console.warn("handbook migration v3 skipped:", e);
   }
 }
