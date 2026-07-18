@@ -14,7 +14,7 @@
 // ============================================================
 import { Store } from "./storage.js";
 import { newTemplate, newTemplateExercise } from "./models.js";
-import { getUsername } from "./supabase.js";
+import { getUsername, flushAll } from "./supabase.js";
 
 // 只有这个用户名才会被导入
 const OWNER = "聶星辰";
@@ -22,7 +22,8 @@ const OWNER = "聶星辰";
 const SEED_FLAG = "health_app_seed_handbook_v1";
 // 模板内容迁移标记（每次要改"已导入过"的模板内容，就加一个新标记并写迁移逻辑）
 const MIGRATION_V2_FLAG = "health_app_handbook_migration_v2";
-const MIGRATION_V3_FLAG = "health_app_handbook_migration_v3"; // 简化成 A/B 两套菜单
+const MIGRATION_V3_FLAG = "health_app_handbook_migration_v3"; // 简化成 A/B 两套菜单（旧，可能因云端未推成功而卡住）
+const MIGRATION_V4_FLAG = "health_app_handbook_migration_v4"; // v4：强制重换 A/B 并确认推云端
 
 // 训练菜单（2026-06-14 起，朋友帮忙简化为 Day A / Day B 两套）。
 // 动作名「中文 日本語」；每项 [动作名, 目标部位, 计划组数, 计划次数]。
@@ -119,14 +120,17 @@ export async function maybeMigrateHandbook() {
     console.warn("handbook migration v2 skipped:", e);
   }
 
-  // —— 迁移 v3（2026-06-14）：把菜单整体换成新的 Day A / Day B 两套 ——
-  // 朋友帮忙简化了菜单。这里对聶星辰账号「整体替换」现有模板（旧 A/B/C 作废）。
+  // —— 迁移 v4（2026-06-14 修）：把菜单整体换成新的 Day A / Day B 两套 ——
+  // 朋友帮忙简化了菜单。对聶星辰账号「整体替换」现有模板（旧 A/B/C 作废）。
+  // v3 曾因云端没推成功 + 退出登录清了数据却没清标记而卡在旧菜单，故用 v4 重跑，
+  // 并在替换后 flushAll() 立即把新菜单推到云端，确保云端也更新（避免下次拉回旧的）。
   try {
     if ((getUsername() || "").trim() !== OWNER) return;
-    if (localStorage.getItem(MIGRATION_V3_FLAG)) return;
+    if (localStorage.getItem(MIGRATION_V4_FLAG)) return;
     await Store.saveCollection("templates", HANDBOOK_TEMPLATES.map(buildTemplate));
-    localStorage.setItem(MIGRATION_V3_FLAG, "1");
+    try { await flushAll(); } catch (e) {} // 立即推云端（失败也不阻塞，pending 标记会兜底重试）
+    localStorage.setItem(MIGRATION_V4_FLAG, "1");
   } catch (e) {
-    console.warn("handbook migration v3 skipped:", e);
+    console.warn("handbook migration v4 skipped:", e);
   }
 }

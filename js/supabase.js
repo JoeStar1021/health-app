@@ -125,6 +125,13 @@ export async function signOut() {
   // 清掉本地数据缓存，避免同一台设备换人登录时串数据
   COLLECTIONS.forEach((k) => { localStorage.removeItem(LOCAL_PREFIX + k); clearPending(k); });
   localStorage.removeItem(LOCAL_PREFIX + "role");
+  // 一并清掉 seed/迁移 标记：下次登录会按最新代码重新 seed/迁移（自愈），
+  // 避免"云端还是旧数据 + 标记已置"导致卡在旧菜单。
+  Object.keys(localStorage).forEach((k) => {
+    if (k.startsWith(LOCAL_PREFIX) && (k.includes("seed") || k.includes("migration"))) {
+      localStorage.removeItem(k);
+    }
+  });
   currentUser = null; authState.user = null; setStatus("loggedout");
 }
 
