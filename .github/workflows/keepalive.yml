@@ -1,0 +1,23 @@
+# Supabase 保活「心跳」
+# 免费版 Supabase 项目闲置约 7 天会自动休眠，休眠后 App 连不上、还可能丢数据。
+# 这个定时任务每天自动访问一次数据库，让项目一直保持清醒，永不休眠。
+# 用的是公开的 anon key（本来就在前端代码里公开，安全）；免费、无需维护。
+name: keep-supabase-alive
+
+on:
+  schedule:
+    - cron: "17 6 * * *"   # 每天 06:17 UTC ping 一次（GitHub 定时可能延迟几十分钟，无所谓）
+  workflow_dispatch: {}      # 也可在 Actions 页面手动点「Run workflow」测试
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST (keeps project active)
+        run: |
+          ANON="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5oYmd1enhvZWxjdndvdnVoa3BzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NDMyMjYsImV4cCI6MjA5NjQxOTIyNn0.GlePZthbTeY4hReU-YC8AlRimzFxleUFebTKHdf-NxM"
+          URL="https://nhbguzxoelcvwovuhkps.supabase.co/rest/v1/user_data?select=collection&limit=1"
+          echo "Pinging Supabase to keep it awake..."
+          curl -sS -o /dev/null -w "HTTP %{http_code}\n" "$URL" \
+            -H "apikey: $ANON" -H "Authorization: Bearer $ANON"
+          echo "Done."
