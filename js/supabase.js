@@ -25,6 +25,15 @@ function markPending(key) { localStorage.setItem(PENDING_PREFIX + key, "1"); }
 function clearPending(key) { localStorage.removeItem(PENDING_PREFIX + key); }
 function isPending(key) { return localStorage.getItem(PENDING_PREFIX + key) === "1"; }
 
+// 合并两组带 id 的记录：primary 优先（冲突时保留 primary 的那条），
+// 再补上 secondary 里 primary 没有的条目。用于拉取时「绝不丢本地独有记录」。
+function mergeById(primary, secondary) {
+  const p = Array.isArray(primary) ? primary : [];
+  const s = Array.isArray(secondary) ? secondary : [];
+  const ids = new Set(p.map((x) => x && x.id).filter(Boolean));
+  return p.concat(s.filter((x) => x && x.id && !ids.has(x.id)));
+}
+
 let sb = null;
 let currentUser = null;
 let statusListener = null;
@@ -61,9 +70,13 @@ async function getClient() {
 }
 
 // —— 本地后端（离线/未连云时用，纯 localStorage）——
+// 关键：离线保存也要打「未上传」标记，否则重新连上云时会被云端旧数据覆盖 → 丢数据。
 const localBackend = {
   async load(key) { const r = localStorage.getItem(LOCAL_PREFIX + key); return r ? JSON.parse(r) : null; },
-  async save(key, value) { localStorage.setItem(LOCAL_PREFIX + key, JSON.stringify(value)); },
+  async save(key, value) {
+    localStorage.setItem(LOCAL_PREFIX + key, JSON.stringify(value));
+    markPending(key); // 离线改动也标记，连上云后会被保留并补传，绝不被覆盖
+  },
 };
 export function useLocalFallback() { setBackend(localBackend); }
 
@@ -203,31 +216,41 @@ async function pullAndMaybeMigrate() {
   (data || []).forEach((r) => (byCol[r.collection] = r.data));
   // 仅当这台设备来自旧的 Drive 方案（带 use_drive 标记）才把本地数据迁移上云，
   // 防止别人在你设备上登录时把你的数据上传到他账号。
-  const fromDrive = localStorage.getItem(LOCAL_PREFIX + "use_drive") === "1";
+  const uploadCloud = async (key, val) => {
+    const { error: upErr } = await c.from("user_data").upsert(
+      { user_id: currentUser.id, collection: key, data: val, updated_at: new Date().toISOString() },
+      { onConflict: "user_id,collection" });
+    return !upErr;
+  };
+
   for (const key of COLLECTIONS) {
-    if (isPending(key)) {
-      // 本地有未确认上传的改动（可能是上次崩溃前记录的）→ 本地为准，重新上传，
-      // 绝不用云端覆盖本地。这样闪退后重开，训练进度不会丢。
-      const r = localStorage.getItem(LOCAL_PREFIX + key);
-      const val = r ? JSON.parse(r) : [];
-      try {
-        const { error: upErr } = await c.from("user_data").upsert(
-          { user_id: currentUser.id, collection: key, data: val, updated_at: new Date().toISOString() },
-          { onConflict: "user_id,collection" });
-        if (!upErr) clearPending(key);
-      } catch (e) { /* 上传失败：保留标记与本地，下次再试 */ }
-    } else if (byCol[key] != null) {
-      localStorage.setItem(LOCAL_PREFIX + key, JSON.stringify(byCol[key])); // 云端有且本地无待同步 → 用云端
-    } else if (fromDrive) {
-      const r = localStorage.getItem(LOCAL_PREFIX + key);
-      const val = r ? JSON.parse(r) : [];
-      await c.from("user_data").upsert(
-        { user_id: currentUser.id, collection: key, data: val },
-        { onConflict: "user_id,collection" }
-      ); // 迁移：本地旧数据上传
+    const localRaw = localStorage.getItem(LOCAL_PREFIX + key);
+    const localArr = localRaw ? JSON.parse(localRaw) : [];
+    const cloudArr = byCol[key];
+
+    if (key === "templates") {
+      // 模板由「迁移逻辑」统一管理：有待上传标记则本地为准上传，否则云端为准
+      if (isPending(key)) { try { if (await uploadCloud(key, localArr)) clearPending(key); } catch (e) {} }
+      else if (cloudArr != null) localStorage.setItem(LOCAL_PREFIX + key, JSON.stringify(cloudArr));
+      else localStorage.setItem(LOCAL_PREFIX + key, JSON.stringify([]));
+      continue;
+    }
+
+    // —— 用户记录（训练/体重/饮食）：绝不丢本地独有条目 ——
+    // 按 id 合并云端与本地：本地独有的条目（可能是离线记录、还没上云）一律保留。
+    // 冲突时：本地有待上传标记 → 本地那条优先（更新）；否则 → 云端优先。
+    const merged = isPending(key)
+      ? mergeById(localArr, cloudArr || [])
+      : mergeById(cloudArr || [], localArr);
+    localStorage.setItem(LOCAL_PREFIX + key, JSON.stringify(merged));
+    const cloudLen = Array.isArray(cloudArr) ? cloudArr.length : 0;
+    // 合并后若比云端多（有本地独有条目）或本来就有待上传标记 → 把合并结果补回云端
+    if (isPending(key) || merged.length !== cloudLen) {
+      try { if (await uploadCloud(key, merged)) clearPending(key); else markPending(key); }
+      catch (e) { markPending(key); }
     } else {
-      localStorage.setItem(LOCAL_PREFIX + key, JSON.stringify([])); // 新用户/新设备 → 从零
+      clearPending(key);
     }
   }
-  if (fromDrive) localStorage.removeItem(LOCAL_PREFIX + "use_drive"); // 迁移完成，去掉标记
+  if (fromDrive) localStorage.removeItem(LOCAL_PREFIX + "use_drive"); // Drive 方案退役，去掉标记
 }
