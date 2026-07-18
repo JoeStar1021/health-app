@@ -84,6 +84,7 @@ export function newSession(templateName) {
     session_note: "",                  // 【预留】整体备注
     total_duration: null,              // 【预留】总时长
     status: "in_progress",             // in_progress / done
+    finished_at: null,                 // 点「完成本次训练」的时刻（用于饮食记录的正计时）
     exercises: [],
   };
 }
@@ -119,16 +120,15 @@ export function newWeightEntry() {
 }
 
 // ============================================================
-// 饮食打卡 —— 文档 5.2
+// 饮食记录（2026-06 重做：自由文字记录 + 距上次训练时间）
 // ============================================================
 
-export function newDietEntry(adhered, reason) {
+export function newDietEntry(content, sinceMs) {
   return {
     id: uid(),
     user_id: CURRENT_USER,
-    timestamp: now(),
-    date: new Date().toISOString().slice(0, 10), // 【系统自动】YYYY-MM-DD
-    adhered: !!adhered,        // 【必填】是否坚持
-    reason: adhered ? "" : (reason || ""), // 未坚持时填
+    timestamp: now(),                              // 【系统自动】记录时刻
+    content: content || "",                        // 吃了什么（用户输入）
+    since_ms: (sinceMs == null ? null : sinceMs),  // 保存时「距上次训练」的毫秒数（冻结留档）
   };
 }

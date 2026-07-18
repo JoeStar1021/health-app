@@ -305,3 +305,24 @@ input:disabled { background: #f0f0f3; color: #c4c4c8; }
 }
 .hist-table th { color: var(--muted); font-weight: 400; font-size: 12px; text-align: center; padding: 4px 0; }
 .hist-table td { text-align: center; padding: 7px 0; border-top: 0.5px solid var(--sep); }
+
+/* —— 饮食记录 —— */
+.diet-timer-card { text-align: center; padding: 18px var(--pad); }
+.diet-timer-label { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+.diet-timer { font-size: 26px; font-weight: 700; color: var(--brand); letter-spacing: .5px; }
+/* 日期头（每天只出现一次，加粗左对齐小字） */
+.diet-date { font-size: 13px; font-weight: 700; text-align: left; color: var(--ink); margin: 16px 4px 6px; }
+/* 单条记录：时间(左小) / 内容(中黑) / 距训练(右灰小) */
+.diet-rec { background: var(--card); border-radius: 12px; padding: 9px var(--pad) 8px; margin-bottom: 8px; }
+.diet-time { font-size: 12px; color: var(--muted); text-align: left; }
+.diet-content { font-size: 16px; color: var(--ink); text-align: center; padding: 3px 0; word-break: break-word; }
+.diet-since { font-size: 11px; color: var(--muted); text-align: right; }
+/* 自然周折叠 */
+.diet-week { margin-top: 4px; }
+.diet-week-sum {
+  display: flex; align-items: center; gap: 8px; padding: 11px 6px; cursor: pointer;
+  list-style: none; font-size: 14px; font-weight: 600; color: var(--muted);
+}
+.diet-week-sum::-webkit-details-marker { display: none; }
+.diet-week-ic::before { content: "＋"; display: inline-block; width: 16px; text-align: center; color: var(--brand); font-weight: 700; }
+.diet-week[open] .diet-week-ic::before { content: "－"; }

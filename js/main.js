@@ -593,6 +593,7 @@ async function SessionChecklistScreen(root, sessionId) {
   $("#addEx", root).onclick = () => navigate((r) => AddExerciseScreen(r, sessionId), "title_add_ex");
   $("#finish", root).onclick = async () => {
     session.status = "done";
+    session.finished_at = new Date().toISOString(); // 饮食记录的正计时以此为起点
     await saveSession(session);
     toast(t("session_saved"));
     reset(HomeScreen, "title_home");
@@ -943,43 +944,119 @@ async function WeightScreen(root) {
 // ============================================================
 // 饮食打卡（文档第 5 节）
 // ============================================================
-async function DietScreen(root) {
-  const today = todayStr();
-  const all = await Store.getCollection("diet");
-  const existing = all.find((d) => d.date === today);
-  let adhered = existing ? existing.adhered : null;
+// —— 饮食记录辅助 ——
+let dietTimerInterval = null;
 
-  function paint() {
-    root.innerHTML = `
-      <div class="card">
-        <h2>${t("diet_q")}</h2>
-        ${existing ? `<p class="muted">${t("already_checked")}</p>` : ""}
-        <div class="pill-toggle">
-          <button id="yes" class="${adhered === true ? "on-yes" : ""}">${t("yes_btn")}</button>
-          <button id="no" class="${adhered === false ? "on-no" : ""}">${t("no_btn")}</button>
-        </div>
-        <div id="reasonBox" style="margin-top:14px;${adhered === false ? "" : "display:none"}">
-          <label class="field"><span class="lbl">${t("reason_label")}</span>
-          <textarea id="reason" placeholder="${t("reason_ph")}">${esc(existing?.reason || "")}</textarea></label>
-        </div>
-        <button class="btn" id="save" style="margin-top:8px">${t("save_check")}</button>
-      </div>`;
-    $("#yes", root).onclick = () => { adhered = true; paint(); };
-    $("#no", root).onclick = () => { adhered = false; paint(); };
-    $("#save", root).onclick = save;
+// 某个日期所在「自然周(周一~周日)」的周日
+function sundayOf(date) {
+  const day = date.getDay();               // 0=周日 … 6=周六
+  const add = day === 0 ? 0 : 7 - day;     // 到本周日还差几天
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + add);
+}
+function cnDateFull(d) { return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`; }
+function hhmm(iso) {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+// 毫秒 → "X天 X小时 X分钟"
+function fmtDuration(ms) {
+  const totalMin = Math.max(0, Math.floor(ms / 60000));
+  return t("dur_dhm", { d: Math.floor(totalMin / 1440), h: Math.floor((totalMin % 1440) / 60), m: totalMin % 60 });
+}
+// 最近一次完成训练的时刻（优先 finished_at，旧数据回退到开始时间）
+async function lastWorkoutFinishIso() {
+  const sessions = await Store.getCollection("strength_sessions");
+  let latest = null;
+  for (const s of sessions) {
+    if (s.status !== "done") continue;
+    const ft = s.finished_at || s.timestamp;
+    if (!latest || ft > latest) latest = ft;
   }
-  async function save() {
-    if (adhered === null) { toast(t("pick_yes_no")); return; }
-    const reason = adhered === false ? ($("#reason", root)?.value || "") : "";
+  return latest;
+}
+
+// 一天的记录块：日期头(只出现一次) + 若干条记录(时间/内容/距训练)
+function dietDayGroupHtml(list) {
+  const header = `<div class="diet-date">${cnDateFull(new Date(list[0].timestamp))}</div>`;
+  const recs = list.map((e) => `
+    <div class="diet-rec">
+      <div class="diet-time">${hhmm(e.timestamp)}</div>
+      <div class="diet-content">${esc(e.content)}</div>
+      <div class="diet-since">${e.since_ms == null ? "—" : t("after_workout", { d: fmtDuration(e.since_ms) })}</div>
+    </div>`).join("");
+  return `<div class="diet-day">${header}${recs}</div>`;
+}
+
+// 整个列表：从新到旧；本自然周展开，往期每个自然周折叠(标签=该周周日日期)
+function dietListHtml(entries) {
+  if (!entries.length) return `<div class="empty">${t("no_diet_yet")}</div>`;
+  const sorted = entries.slice().sort((a, b) => (b.timestamp || "").localeCompare(a.timestamp || ""));
+  const byWeek = new Map(); // 周日key -> { sunDate, days: Map(dayKey -> entries[]) }
+  for (const e of sorted) {
+    const d = new Date(e.timestamp);
+    const sun = sundayOf(d);
+    const wk = ymdKey(sun.getFullYear(), sun.getMonth(), sun.getDate());
+    if (!byWeek.has(wk)) byWeek.set(wk, { sunDate: sun, days: new Map() });
+    const dayKey = ymdKey(d.getFullYear(), d.getMonth(), d.getDate());
+    const days = byWeek.get(wk).days;
+    if (!days.has(dayKey)) days.set(dayKey, []);
+    days.get(dayKey).push(e);
+  }
+  const curSun = sundayOf(new Date());
+  const curWk = ymdKey(curSun.getFullYear(), curSun.getMonth(), curSun.getDate());
+  let html = "";
+  for (const [wk, wkObj] of byWeek) {
+    const daysHtml = [...wkObj.days.values()].map((list) => dietDayGroupHtml(list)).join("");
+    if (wk === curWk) {
+      html += `<div class="diet-week-open">${daysHtml}</div>`;
+    } else {
+      html += `<details class="diet-week">
+        <summary class="diet-week-sum"><span class="diet-week-ic"></span>${t("week_ending", { date: cnDateFull(wkObj.sunDate) })}</summary>
+        <div class="diet-week-body">${daysHtml}</div>
+      </details>`;
+    }
+  }
+  return html;
+}
+
+async function DietScreen(root) {
+  if (dietTimerInterval) { clearInterval(dietTimerInterval); dietTimerInterval = null; }
+  const entries = (await Store.getCollection("diet")).filter((e) => e && typeof e.content === "string");
+  const originIso = await lastWorkoutFinishIso();
+
+  root.innerHTML = `
+    <div class="card diet-timer-card">
+      <div class="diet-timer-label">${t("since_last_workout")}</div>
+      <div class="diet-timer" id="dietTimer">—</div>
+    </div>
+    <div class="card">
+      <label class="field" style="margin-bottom:8px"><span class="lbl">${t("diet_input_label")}</span>
+        <input id="dietInput" placeholder="${t("diet_input_ph")}" /></label>
+      <button class="btn" id="dietSave">${t("save")}</button>
+    </div>
+    <div id="dietList">${dietListHtml(entries)}</div>
+  `;
+
+  // 正计时（X天 X小时 X分钟），到点自动刷新；离开界面自动停止
+  const tick = () => {
+    const el = document.getElementById("dietTimer");
+    if (!el) { clearInterval(dietTimerInterval); dietTimerInterval = null; return; }
+    el.textContent = originIso == null ? t("timer_not_started")
+      : fmtDuration(Date.now() - new Date(originIso).getTime());
+  };
+  tick();
+  dietTimerInterval = setInterval(tick, 1000);
+
+  $("#dietSave", root).onclick = async () => {
+    const content = $("#dietInput", root).value.trim();
+    if (!content) { toast(t("diet_input_empty")); return; }
+    const sinceMs = originIso == null ? null : (Date.now() - new Date(originIso).getTime());
     const all = await Store.getCollection("diet");
-    const i = all.findIndex((d) => d.date === today);
-    const rec = newDietEntry(adhered, reason);
-    if (i >= 0) { rec.id = all[i].id; all[i] = rec; } else all.push(rec);
+    all.push(newDietEntry(content, sinceMs));
     await Store.saveCollection("diet", all);
-    toast(t("check_done"));
-    reset(HomeScreen, "title_home");
-  }
-  paint();
+    toast(t("diet_saved"));
+    DietScreen(root); // 重新渲染，立刻看到新记录
+  };
 }
 
 // ============================================================
@@ -1007,10 +1084,11 @@ async function HistoryScreen(root) {
         ${w.body_fat_pct ? "· " + t("body_fat_short", { v: w.body_fat_pct }) : ""}</div>
         <div class="meta">${fmtDate(w.timestamp)}</div></div></div>`).join("") : `<div class="empty">${t("no_weight")}</div>`}
 
-    <div class="section-title">${t("hist_diet")}（${diets.length}）</div>
-    ${diets.length ? diets.slice().reverse().slice(0, 20).map((d) => `
-      <div class="listitem"><div class="grow"><div class="name">${d.adhered ? t("diet_yes_label") : t("diet_no_label")}</div>
-        <div class="meta">${d.date}${d.reason ? " · " + esc(d.reason) : ""}</div></div></div>`).join("") : `<div class="empty">${t("no_diet")}</div>`}
+    ${(() => { const dn = diets.filter((d) => d && typeof d.content === "string"); return `
+    <div class="section-title">${t("hist_diet")}（${dn.length}）</div>
+    ${dn.length ? dn.slice().sort((a, b) => (b.timestamp || "").localeCompare(a.timestamp || "")).slice(0, 20).map((d) => `
+      <div class="listitem"><div class="grow"><div class="name">${esc(d.content || "-")}</div>
+        <div class="meta">${fmtDate(d.timestamp)}</div></div></div>`).join("") : `<div class="empty">${t("no_diet")}</div>`}`; })()}
   `;
 }
 
