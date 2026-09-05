@@ -12,6 +12,9 @@ import * as Auth from "./supabase.js";
 import { maybeSeedHandbook, maybeMigrateHandbook } from "./seed.js";
 import { INTRO, GROUPS, getExerciseDetail } from "./handbook.js";
 
+// App 版本号（每次部署 bump，方便排查手机上到底加载了哪个版本）
+const APP_VERSION = "v23";
+
 // ---------- 小工具 ----------
 const $ = (sel, root = document) => root.querySelector(sel);
 const appEl = $("#app");
@@ -165,7 +168,13 @@ function accountGroupHtml() {
         <span class="row-text"><span class="row-title">${t("logout")}</span></span>
         <span class="row-chev">${ICONS.chevR}</span>
       </button>
-    </div>`;
+    </div>
+    <div class="ver-line">${t("ver_line", { v: APP_VERSION, n: tplCountLocal() })}</div>`;
+}
+// 本地模板数量（同步读，仅用于账户区诊断显示）
+function tplCountLocal() {
+  try { return (JSON.parse(localStorage.getItem("health_app_templates") || "[]") || []).length; }
+  catch (e) { return "?"; }
 }
 function wireAccountGroup(root) {
   const btn = $("#logout", root);
@@ -1200,6 +1209,13 @@ Auth.setStatusListener(() => {
 })();
 
 // 注册 Service Worker（让 App 可离线、可加到主屏幕）
+// 新版本 SW 接管后自动刷新一次，让新代码立刻生效（避免"重开好几次才更新"）。
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").catch(() => {});
+  let swReloaded = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (swReloaded) return;
+    swReloaded = true;
+    location.reload();
+  });
 }

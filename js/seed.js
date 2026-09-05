@@ -18,6 +18,8 @@ import { getUsername, flushAll } from "./supabase.js";
 
 // 只有这个用户名才会被导入
 const OWNER = "聶星辰";
+const OWNER_NAMES = ["聶星辰", "聂星辰"]; // 繁/简两种写法都认，防匹配落空
+function isOwnerUser() { return OWNER_NAMES.includes((getUsername() || "").trim()); }
 // 一次性标记（换版本号即可重新导入）
 const SEED_FLAG = "health_app_seed_handbook_v1";
 // 模板内容迁移标记（每次要改"已导入过"的模板内容，就加一个新标记并写迁移逻辑）
@@ -66,7 +68,7 @@ function buildTemplate(def) {
  */
 export async function maybeSeedHandbook() {
   try {
-    if ((getUsername() || "").trim() !== OWNER) return;        // 隐私闸门①：只给聶星辰
+    if (!isOwnerUser()) return;                                 // 隐私闸门①：只给聶星辰
     if (localStorage.getItem(SEED_FLAG)) return;               // 本设备已导入过，跳过
 
     const templates = await Store.getCollection("templates");
@@ -95,8 +97,7 @@ export async function maybeSeedHandbook() {
  */
 export async function maybeMigrateHandbook() {
   // 注意：各迁移块相互独立、互不阻断（用 if 守卫，别用 return，否则前一块会挡住后面的）。
-  const isOwner = (getUsername() || "").trim() === OWNER;
-  if (!isOwner) return;
+  if (!isOwnerUser()) return;
 
   // —— 迁移 v4（2026-06-14）：整体换成 Day A / Day B 两套 ——
   try {

@@ -334,3 +334,6 @@ input:disabled { background: #f0f0f3; color: #c4c4c8; }
 .dr-ex { margin-top: 12px; }
 .dr-ex:first-of-type { margin-top: 4px; }
 .dr-exname { font-size: 15px; font-weight: 600; margin: 0 2px 4px; }
+
+/* 账户区版本诊断行 */
+.ver-line { text-align: center; font-size: 11px; color: var(--muted); margin: 8px 0 0; }
