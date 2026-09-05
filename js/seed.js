@@ -25,6 +25,7 @@ const MIGRATION_V2_FLAG = "health_app_handbook_migration_v2";
 const MIGRATION_V3_FLAG = "health_app_handbook_migration_v3"; // 简化成 A/B 两套菜单（旧，可能因云端未推成功而卡住）
 const MIGRATION_V4_FLAG = "health_app_handbook_migration_v4"; // v4：强制重换 A/B 并确认推云端
 const MIGRATION_V5_FLAG = "health_app_handbook_migration_v5"; // v5：A/B 改名 + 新增 Day C(背)/Day D(游泳)
+const MIGRATION_V6_FLAG = "health_app_handbook_migration_v6"; // v6：不靠改名，直接整体强制换成正确的 4 套
 
 // 训练菜单（2026-06-14 起，朋友帮忙简化为 Day A / Day B 两套）。
 // 动作名「中文 日本語」；每项 [动作名, 目标部位, 计划组数, 计划次数]。
@@ -129,4 +130,15 @@ export async function maybeMigrateHandbook() {
       localStorage.setItem(MIGRATION_V5_FLAG, "1");
     }
   } catch (e) { console.warn("handbook migration v5 skipped:", e); }
+
+  // —— 迁移 v6（2026-06-15）：不靠改名匹配，直接把菜单整体强制换成正确的 4 套 ——
+  // v5 靠匹配旧模板名来改名，若账号里名字对不上（例如还是更早的旧名）就没生效且置了标记。
+  // v6 与名字无关，直接整体替换 → 保证得到 Day A·胸/肩 / B·腿 / C·背 / D·游泳。
+  try {
+    if (!localStorage.getItem(MIGRATION_V6_FLAG)) {
+      await Store.saveCollection("templates", HANDBOOK_TEMPLATES.map(buildTemplate));
+      try { await flushAll(); } catch (e) {} // 立即确认推云端
+      localStorage.setItem(MIGRATION_V6_FLAG, "1");
+    }
+  } catch (e) { console.warn("handbook migration v6 skipped:", e); }
 }
