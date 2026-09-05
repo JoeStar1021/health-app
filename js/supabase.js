@@ -38,7 +38,7 @@ let sb = null;
 let currentUser = null;
 let statusListener = null;
 
-export const authState = { user: null, status: "loggedout" };
+export const authState = { user: null, status: "loggedout", mode: "?" }; // mode: cloud | local（诊断用）
 // status: loggedout | syncing | synced | error
 export function setStatusListener(fn) { statusListener = fn; }
 function setStatus(s) { authState.status = s; if (statusListener) statusListener(authState); }
@@ -78,7 +78,7 @@ const localBackend = {
     markPending(key); // 离线改动也标记，连上云后会被保留并补传，绝不被覆盖
   },
 };
-export function useLocalFallback() { setBackend(localBackend); }
+export function useLocalFallback() { setBackend(localBackend); authState.mode = "local"; }
 
 // —— 云端后端（本地即时 + 后台同步）——
 const supaBackend = {
@@ -204,6 +204,7 @@ export async function initAfterLogin() {
   // 管理员不拉取/迁移自己的数据（避免把桌面上的旧 Drive 数据误迁进 Joe 账号）
   if (!isAdmin()) await pullAndMaybeMigrate();
   setBackend(supaBackend);
+  authState.mode = "cloud";
   setStatus("synced");
 }
 

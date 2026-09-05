@@ -13,7 +13,7 @@ import { maybeSeedHandbook, maybeMigrateHandbook } from "./seed.js";
 import { INTRO, GROUPS, getExerciseDetail } from "./handbook.js";
 
 // App 版本号（每次部署 bump，方便排查手机上到底加载了哪个版本）
-const APP_VERSION = "v23";
+const APP_VERSION = "v24";
 
 // ---------- 小工具 ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -169,7 +169,7 @@ function accountGroupHtml() {
         <span class="row-chev">${ICONS.chevR}</span>
       </button>
     </div>
-    <div class="ver-line">${t("ver_line", { v: APP_VERSION, n: tplCountLocal() })}</div>`;
+    <div class="ver-line">${t("ver_line", { v: APP_VERSION, n: tplCountLocal() })} · ${Auth.authState.mode}</div>`;
 }
 // 本地模板数量（同步读，仅用于账户区诊断显示）
 function tplCountLocal() {
@@ -1198,8 +1198,11 @@ Auth.setStatusListener(() => {
       await maybeMigrateHandbook(); // 仅聶星辰：把已导入的旧模板内容更新到新版
       routeAfterLogin(); // 按角色分流：管理员 → 管理界面，普通用户 → 首页
     } catch (e) {
-      // 离线/连不上云：普通用户用本地缓存进首页；管理员需联网（进管理界面会提示加载失败）
+      // 初始化(拉取)失败退回本地模式。但只要 getSession 拿到了登录信息(用户名还在)，
+      // 就补跑一次 seed/迁移：会写本地并打 pending 标记，联网后自动补传。
+      // 避免"拉取出错 → 迁移永远不跑 → 菜单卡住"。
       Auth.useLocalFallback();
+      try { await maybeSeedHandbook(); await maybeMigrateHandbook(); } catch (e2) {}
       if (Auth.cachedRole() === "admin") reset(AdminScreen, "title_admin");
       else reset(HomeScreen, "title_home");
     }
