@@ -13,7 +13,7 @@ import { maybeSeedHandbook, maybeMigrateHandbook } from "./seed.js";
 import { INTRO, GROUPS, getExerciseDetail } from "./handbook.js";
 
 // App 版本号（每次部署 bump，方便排查手机上到底加载了哪个版本）
-const APP_VERSION = "v27";
+const APP_VERSION = "v28";
 
 // ---------- 小工具 ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -1216,9 +1216,13 @@ Auth.setStatusListener(() => {
 })();
 
 // 注册 Service Worker（让 App 可离线、可加到主屏幕）
-// 新版本 SW 接管后自动刷新一次，让新代码立刻生效（避免"重开好几次才更新"）。
+// updateViaCache:"none" → 浏览器永远绕过 HTTP 缓存拿最新 sw.js（否则 GitHub 的 10 分钟缓存
+//   会让新版本迟迟检测不到）。配合 controllerchange 自动刷新，新版基本能立刻生效。
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js").catch(() => {});
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then((reg) => {
+    reg.update();
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) reg.update(); });
+  }).catch(() => {});
   let swReloaded = false;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
     if (swReloaded) return;

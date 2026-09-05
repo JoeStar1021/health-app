@@ -202,7 +202,16 @@ export async function initAfterLogin() {
   try { await upsertProfile(); } catch (e) {}
   localStorage.setItem(LOCAL_PREFIX + "role", isAdmin() ? "admin" : "user");
   // 管理员不拉取/迁移自己的数据（避免把桌面上的旧 Drive 数据误迁进 Joe 账号）
-  if (!isAdmin()) await pullAndMaybeMigrate();
+  if (!isAdmin()) {
+    try {
+      await pullAndMaybeMigrate();
+    } catch (e) {
+      // 拉取失败也【不退回离线】：保留本地、把各集合标记为待上传，保持云端模式，
+      // 后续保存/可见性变化时会自动补传。避免"拉取一失败就整个掉到 local 模式、数据不上云"。
+      COLLECTIONS.forEach((k) => markPending(k));
+      console.warn("initAfterLogin: pull failed, staying cloud with pending:", e);
+    }
+  }
   setBackend(supaBackend);
   authState.mode = "cloud";
   setStatus("synced");
