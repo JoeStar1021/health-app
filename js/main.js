@@ -13,7 +13,7 @@ import { maybeSeedHandbook, maybeMigrateHandbook } from "./seed.js";
 import { INTRO, GROUPS, getExerciseDetail } from "./handbook.js";
 
 // App 版本号（每次部署 bump，方便排查手机上到底加载了哪个版本）
-const APP_VERSION = "v25";
+const APP_VERSION = "v26";
 
 // ---------- 小工具 ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -328,7 +328,7 @@ function buildDayMaps(weights, sessions) {
 
 // 印章：外圈 + 大写字母；A=红 B=蓝（其余=绿，暂给 C 用，日后 C 移除）。
 // 淡墨 + 断墨效果：feTurbulence 生成噪声当作 alpha 蒙版，抠掉一部分 → 像没吸饱墨的章。
-const STAMP_COLORS = { A: "#c1272d", B: "#1c5bb0", C: "#2e7d46", D: "#0f9aa8" }; // A红 B蓝 C绿 D青
+const STAMP_COLORS = { A: "#c1272d", B: "#1c5bb0", C: "#2e7d46", D: "#4a4a4a" }; // A红 B蓝 C绿 D深灰
 function stampSvg(letter, dayNum) {
   const color = STAMP_COLORS[letter] || "#8e5aa8";
   const rot = ((dayNum * 37) % 21) - 10;      // -10~10 度，每天略不同
