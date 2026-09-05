@@ -13,7 +13,7 @@ import { maybeSeedHandbook, maybeMigrateHandbook } from "./seed.js";
 import { INTRO, GROUPS, getExerciseDetail } from "./handbook.js";
 
 // App 版本号（每次部署 bump，方便排查手机上到底加载了哪个版本）
-const APP_VERSION = "v24";
+const APP_VERSION = "v25";
 
 // ---------- 小工具 ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -169,7 +169,8 @@ function accountGroupHtml() {
         <span class="row-chev">${ICONS.chevR}</span>
       </button>
     </div>
-    <div class="ver-line">${t("ver_line", { v: APP_VERSION, n: tplCountLocal() })} · ${Auth.authState.mode}</div>`;
+    <div class="ver-line">${t("ver_line", { v: APP_VERSION, n: tplCountLocal() })} · ${Auth.authState.mode}</div>
+    ${Auth.authState.mode === "local" ? `<div class="ver-line" style="color:var(--red)">离线原因: ${esc(localStorage.getItem("health_app_init_err") || "?")}</div>` : ""}`;
 }
 // 本地模板数量（同步读，仅用于账户区诊断显示）
 function tplCountLocal() {
@@ -1194,10 +1195,13 @@ Auth.setStatusListener(() => {
     appEl.innerHTML = `<div class="empty">${t("loading")}</div>`;
     try {
       await Auth.initAfterLogin();
+      try { localStorage.removeItem("health_app_init_err"); } catch (_) {} // 成功=清掉离线原因
       await maybeSeedHandbook(); // 仅聶星辰账号会导入手册模板，其余账号无操作
       await maybeMigrateHandbook(); // 仅聶星辰：把已导入的旧模板内容更新到新版
       routeAfterLogin(); // 按角色分流：管理员 → 管理界面，普通用户 → 首页
     } catch (e) {
+      // 记下离线原因（诊断用，界面会显示）
+      try { localStorage.setItem("health_app_init_err", String((e && e.message) || e).slice(0, 100)); } catch (_) {}
       // 初始化(拉取)失败退回本地模式。但只要 getSession 拿到了登录信息(用户名还在)，
       // 就补跑一次 seed/迁移：会写本地并打 pending 标记，联网后自动补传。
       // 避免"拉取出错 → 迁移永远不跑 → 菜单卡住"。
