@@ -1,6 +1,6 @@
 // sw.js —— Service Worker：让 App 可离线使用、可加到主屏幕
 // 第一版用简单的「缓存优先」策略缓存自身文件。
-const CACHE = "health-app-v20";
+const CACHE = "health-app-v21";
 const ASSETS = [
   ".",
   "index.html",

@@ -24,12 +24,13 @@ const SEED_FLAG = "health_app_seed_handbook_v1";
 const MIGRATION_V2_FLAG = "health_app_handbook_migration_v2";
 const MIGRATION_V3_FLAG = "health_app_handbook_migration_v3"; // 简化成 A/B 两套菜单（旧，可能因云端未推成功而卡住）
 const MIGRATION_V4_FLAG = "health_app_handbook_migration_v4"; // v4：强制重换 A/B 并确认推云端
+const MIGRATION_V5_FLAG = "health_app_handbook_migration_v5"; // v5：A/B 改名 + 新增 Day C(背)/Day D(游泳)
 
 // 训练菜单（2026-06-14 起，朋友帮忙简化为 Day A / Day B 两套）。
 // 动作名「中文 日本語」；每项 [动作名, 目标部位, 计划组数, 计划次数]。
 const HANDBOOK_TEMPLATES = [
   {
-    name: "Day A · 胸/肩/背",
+    name: "Day A · 胸/肩",
     exercises: [
       ["坐姿推胸 チェストプレス", "胸", 6, "10-12"],
       ["坐姿肩推 ショルダープレス", "肩", 3, "10-14"],
@@ -38,19 +39,22 @@ const HANDBOOK_TEMPLATES = [
     ],
   },
   {
-    name: "Day B · 腿/肩",
+    name: "Day B · 腿",
     exercises: [
       ["腿举 45°レッグプレス", "腿", 7, "10-14"],
       ["提踵 カーフプレス", "小腿", 4, "10-14"],
       ["坐姿划船 シーテッドロー", "背", 5, "10-12"],
     ],
   },
+  { name: "Day C · 背", exercises: [] },                 // 空模板：靠"临时加动作"自选当天内容
+  { name: "Day D · 游泳", exercises: [], kind: "swim" }, // 游泳：只记米数+时长
 ];
 
 // 由定义构建一个模板对象
 function buildTemplate(def) {
   const tpl = newTemplate(def.name);
-  tpl.exercises = def.exercises.map(([name, muscle, sets, reps]) =>
+  if (def.kind) tpl.kind = def.kind;
+  tpl.exercises = (def.exercises || []).map(([name, muscle, sets, reps]) =>
     newTemplateExercise(name, muscle, sets, reps));
   return tpl;
 }
@@ -89,48 +93,40 @@ export async function maybeSeedHandbook() {
  * 必须在 Auth.initAfterLogin() 之后调用。
  */
 export async function maybeMigrateHandbook() {
+  // 注意：各迁移块相互独立、互不阻断（用 if 守卫，别用 return，否则前一块会挡住后面的）。
+  const isOwner = (getUsername() || "").trim() === OWNER;
+  if (!isOwner) return;
+
+  // —— 迁移 v4（2026-06-14）：整体换成 Day A / Day B 两套 ——
   try {
-    if ((getUsername() || "").trim() !== OWNER) return;
-    if (localStorage.getItem(MIGRATION_V2_FLAG)) return;
+    if (!localStorage.getItem(MIGRATION_V4_FLAG)) {
+      await Store.saveCollection("templates", HANDBOOK_TEMPLATES.map(buildTemplate));
+      try { await flushAll(); } catch (e) {}
+      localStorage.setItem(MIGRATION_V4_FLAG, "1");
+    }
+  } catch (e) { console.warn("handbook migration v4 skipped:", e); }
 
-    const templates = await Store.getCollection("templates");
-    let changed = false;
-
-    // ① 高脚杯深蹲 → 史密斯机深蹲（在任意模板里找到就替换）
-    for (const tpl of templates) {
-      for (const ex of tpl.exercises) {
-        if (ex.exercise_name === "高脚杯深蹲 ゴブレットスクワット") {
-          ex.exercise_name = "史密斯机深蹲 スミススクワット";
-          ex.target_muscle = "腿·臀";
-          changed = true;
-        }
+  // —— 迁移 v5（2026-06-15）：A/B 改名（内容不变）+ 新增 Day C(背，空) / Day D(游泳) ——
+  try {
+    if (!localStorage.getItem(MIGRATION_V5_FLAG)) {
+      const templates = await Store.getCollection("templates");
+      let changed = false;
+      const rename = (oldName, newName) => {
+        const tpl = templates.find((x) => x.name === oldName);
+        if (tpl) { tpl.name = newName; changed = true; }
+      };
+      rename("Day A · 胸/肩/背", "Day A · 胸/肩");
+      rename("Day B · 腿/肩", "Day B · 腿");
+      if (!templates.some((x) => /Day C/.test(x.name))) {
+        templates.push(buildTemplate({ name: "Day C · 背", exercises: [] }));
+        changed = true;
       }
+      if (!templates.some((x) => /Day D/.test(x.name))) {
+        templates.push(buildTemplate({ name: "Day D · 游泳", exercises: [], kind: "swim" }));
+        changed = true;
+      }
+      if (changed) { await Store.saveCollection("templates", templates); try { await flushAll(); } catch (e) {} }
+      localStorage.setItem(MIGRATION_V5_FLAG, "1");
     }
-
-    // ② Day C 末尾追加 俯卧撑（若尚无）
-    const dayC = templates.find((t) => /Day C/.test(t.name));
-    if (dayC && !dayC.exercises.some((e) => e.exercise_name === "俯卧撑 プッシュアップ")) {
-      dayC.exercises.push(newTemplateExercise("俯卧撑 プッシュアップ", "胸·三头·核心"));
-      changed = true;
-    }
-
-    if (changed) await Store.saveCollection("templates", templates);
-    localStorage.setItem(MIGRATION_V2_FLAG, "1");
-  } catch (e) {
-    console.warn("handbook migration v2 skipped:", e);
-  }
-
-  // —— 迁移 v4（2026-06-14 修）：把菜单整体换成新的 Day A / Day B 两套 ——
-  // 朋友帮忙简化了菜单。对聶星辰账号「整体替换」现有模板（旧 A/B/C 作废）。
-  // v3 曾因云端没推成功 + 退出登录清了数据却没清标记而卡在旧菜单，故用 v4 重跑，
-  // 并在替换后 flushAll() 立即把新菜单推到云端，确保云端也更新（避免下次拉回旧的）。
-  try {
-    if ((getUsername() || "").trim() !== OWNER) return;
-    if (localStorage.getItem(MIGRATION_V4_FLAG)) return;
-    await Store.saveCollection("templates", HANDBOOK_TEMPLATES.map(buildTemplate));
-    try { await flushAll(); } catch (e) {} // 立即推云端（失败也不阻塞，pending 标记会兜底重试）
-    localStorage.setItem(MIGRATION_V4_FLAG, "1");
-  } catch (e) {
-    console.warn("handbook migration v4 skipped:", e);
-  }
+  } catch (e) { console.warn("handbook migration v5 skipped:", e); }
 }

@@ -32,6 +32,7 @@ export function newTemplate(name) {
     id: uid(),
     user_id: CURRENT_USER,
     name: name || "",
+    kind: "strength", // strength（力量，记动作/组数）| swim（游泳，记米数/时长）
     exercises: [], // 每项: { exercise_name, target_muscle, equipment_type }
   };
 }
@@ -85,6 +86,7 @@ export function newSession(templateName) {
     total_duration: null,              // 【预留】总时长
     status: "in_progress",             // in_progress / done
     finished_at: null,                 // 点「完成本次训练」的时刻（用于饮食记录的正计时）
+    swim: null,                        // 游泳会话专用：{ meters, minutes }
     exercises: [],
   };
 }

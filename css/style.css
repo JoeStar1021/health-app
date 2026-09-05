@@ -326,3 +326,11 @@ input:disabled { background: #f0f0f3; color: #c4c4c8; }
 .diet-week-sum::-webkit-details-marker { display: none; }
 .diet-week-ic::before { content: "＋"; display: inline-block; width: 16px; text-align: center; color: var(--brand); font-weight: 700; }
 .diet-week[open] .diet-week-ic::before { content: "－"; }
+
+/* —— 日历盖章日可点 + 当天训练汇报 —— */
+.cal-clickable { cursor: pointer; border-radius: 8px; }
+.cal-clickable:active { background: #f0f0f3; }
+.dr-swim { font-size: 17px; padding: 6px 0; }
+.dr-ex { margin-top: 12px; }
+.dr-ex:first-of-type { margin-top: 4px; }
+.dr-exname { font-size: 15px; font-weight: 600; margin: 0 2px 4px; }

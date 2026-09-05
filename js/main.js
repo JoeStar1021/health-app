@@ -273,8 +273,9 @@ function trainingDateKey(ts) {
   const d = new Date(new Date(ts).getTime() - TRAIN_CUTOFF_MS);
   return ymdKey(d.getFullYear(), d.getMonth(), d.getDate());
 }
-// 这次训练里「实际记录并保存过数据」= 至少有一组填了重量或次数
+// 这次训练里「实际记录并保存过数据」= 有一组填了重量/次数，或游泳填了米数/时长
 function sessionHasData(s) {
+  if (s.swim && (s.swim.meters || s.swim.minutes)) return true;
   return (s.exercises || []).some((e) => (e.sets || []).some((st) =>
     (st.weight !== "" && st.weight != null) || (st.reps !== "" && st.reps != null)));
 }
@@ -317,8 +318,9 @@ function buildDayMaps(weights, sessions) {
 
 // 印章：外圈 + 大写字母；A=红 B=蓝（其余=绿，暂给 C 用，日后 C 移除）。
 // 淡墨 + 断墨效果：feTurbulence 生成噪声当作 alpha 蒙版，抠掉一部分 → 像没吸饱墨的章。
+const STAMP_COLORS = { A: "#c1272d", B: "#1c5bb0", C: "#2e7d46", D: "#0f9aa8" }; // A红 B蓝 C绿 D青
 function stampSvg(letter, dayNum) {
-  const color = letter === "A" ? "#c1272d" : letter === "B" ? "#1c5bb0" : "#2e7d46";
+  const color = STAMP_COLORS[letter] || "#8e5aa8";
   const rot = ((dayNum * 37) % 21) - 10;      // -10~10 度，每天略不同
   const seed = (dayNum * 13) % 100;
   const fid = `stmp${letter}${dayNum}`;
@@ -357,7 +359,7 @@ function calendarCardHtml(weights, sessions) {
   for (let d = 1; d <= daysInMonth; d++) {
     const key = ymdKey(view.y, view.m, d);
     const w = wt[key], L = letter[key];
-    cells += `<div class="cal-cell">
+    cells += `<div class="cal-cell${L ? " cal-clickable" : ""}"${L ? ` data-report="${key}"` : ""}>
       <div class="cal-num${key === todayKey ? " today" : ""}">${d}</div>
       ${w != null ? `<div class="cal-wt">${esc(w)}<span class="cal-kg">kg</span></div>` : ""}
       ${L ? stampSvg(L, d) : ""}
@@ -424,6 +426,10 @@ async function HomeScreen(root) {
     calView = v.m === 11 ? { y: v.y + 1, m: 0 } : { y: v.y, m: v.m + 1 };
     render();
   };
+  // 点日历上盖章的日子 → 看当天完整训练内容
+  root.querySelectorAll(".cal-clickable").forEach((el) => {
+    el.onclick = () => navigate((r) => DayReportScreen(r, el.dataset.report), "title_day_report");
+  });
 
   $("#toStrength", root).onclick = () => navigate(StrengthPickScreen, "title_pick");
   $("#toWeight", root).onclick = () => navigate(WeightScreen, "title_weight");
@@ -468,8 +474,77 @@ async function StrengthPickScreen(root) {
 
   $("#hbEntry", root).onclick = () => navigate(HandbookScreen, "title_handbook");
   root.querySelectorAll(".listitem[data-id]").forEach((el) => {
-    el.onclick = () => startSession(el.dataset.id);
+    el.onclick = () => {
+      const tpl = templates.find((x) => x.id === el.dataset.id);
+      if (tpl && tpl.kind === "swim") navigate((r) => SwimmingScreen(r, tpl.name), "title_swim");
+      else startSession(el.dataset.id);
+    };
   });
+}
+
+// —— 游泳记录：只填米数 + 用时，保存即完成 ——
+async function SwimmingScreen(root, templateName) {
+  root.innerHTML = `
+    <div class="card">
+      <h2>${esc(templateName)}</h2>
+      <label class="field"><span class="lbl">${t("swim_meters")}</span>
+        <input id="swimM" type="number" inputmode="numeric" min="0" placeholder="${t("swim_meters_ph")}" /></label>
+      <label class="field"><span class="lbl">${t("swim_minutes")}</span>
+        <input id="swimMin" type="number" inputmode="numeric" min="0" placeholder="${t("swim_minutes_ph")}" /></label>
+      <button class="btn" id="swimSave">${t("save")}</button>
+    </div>`;
+  $("#swimSave", root).onclick = async () => {
+    const meters = $("#swimM", root).value.trim();
+    const minutes = $("#swimMin", root).value.trim();
+    if (!meters && !minutes) { toast(t("swim_empty")); return; }
+    const nowIso = new Date().toISOString();
+    const session = newSession(templateName);
+    session.status = "done";
+    session.finished_at = nowIso;      // 游泳也是训练：重置饮食计时、日历盖章
+    session.swim = { meters, minutes };
+    const sessions = await Store.getCollection("strength_sessions");
+    sessions.push(session);
+    await Store.saveCollection("strength_sessions", sessions);
+    toast(t("recorded"));
+    reset(HomeScreen, "title_home");
+  };
+}
+
+// —— 当天训练汇报：点日历盖章日 → 看那一整天的所有训练内容 ——
+async function DayReportScreen(root, dateKey) {
+  const sessions = (await Store.getCollection("strength_sessions"))
+    .filter((s) => s.timestamp && sessionHasData(s) && trainingDateKey(s.timestamp) === dateKey)
+    .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+  const sessionHtml = (s) => {
+    if (s.swim) {
+      return `<div class="card">
+        <h2 style="margin:0 0 6px">${esc(s.workout_day_template)}</h2>
+        <div class="muted" style="font-size:13px;margin-bottom:8px">${fmtDate(s.timestamp)}</div>
+        <div class="dr-swim">${t("swim_summary", { m: esc(s.swim.meters || "-"), min: esc(s.swim.minutes || "-") })}</div>
+      </div>`;
+    }
+    const exs = (s.exercises || []).filter((e) => (e.sets || []).some((x) => x.weight !== "" || x.reps !== ""));
+    return `<div class="card">
+      <h2 style="margin:0 0 6px">${esc(s.workout_day_template)}</h2>
+      <div class="muted" style="font-size:13px;margin-bottom:6px">${fmtDate(s.timestamp)}</div>
+      ${exs.length ? exs.map((e) => {
+        const sets = (e.sets || []).filter((x) => x.weight !== "" || x.reps !== "");
+        return `<div class="dr-ex">
+          <div class="dr-exname">${esc(e.exercise_name)}${e.target_muscle ? ` <span class="tag">${esc(e.target_muscle)}</span>` : ""}</div>
+          <table class="hist-table"><thead><tr><th>${t("col_set")}</th><th>${t("col_weight")}</th><th>${t("col_reps")}</th><th>RIR</th></tr></thead>
+          <tbody>${sets.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.weight || "-")}</td><td>${esc(x.reps || "-")}</td><td>${esc(x.rpe_rir || "-")}</td></tr>`).join("")}</tbody></table>
+        </div>`;
+      }).join("") : `<div class="muted">${t("day_report_no_ex")}</div>`}
+    </div>`;
+  };
+
+  const [yy, mm, dd] = dateKey.split("-").map(Number);
+  const dateLabel = cnDateFull(new Date(yy, mm - 1, dd));
+  root.innerHTML = `
+    <div class="section-title">${t("day_report_title", { date: dateLabel })}</div>
+    ${sessions.length ? sessions.map(sessionHtml).join("") : `<div class="empty">${t("day_report_empty")}</div>`}
+  `;
 }
 
 // —— 手册总览：原理综述 + 全部动作详解入口 ——
